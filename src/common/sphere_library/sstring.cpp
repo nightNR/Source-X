@@ -1,7 +1,7 @@
 #include "sstring.h"
 //#include "../../common/CLog.h"
 #include "../../sphere/ProfileTask.h"
-#include "../CExpression.h"
+#include "../CExpression.h" // included in the precompiled header
 
 
 #ifdef MSVC_COMPILER
@@ -57,11 +57,12 @@ bool cstr_to_num(
     const char * RESTRICT str,
     _IntType   * const    out,
     uint        base = 0,
+    size_t      stop_at_len = 0,
     bool const  ignore_trailing_extra_chars = false
     ) noexcept
 {
     static_assert(std::is_integral_v<_IntType>, "Only integers supported");
-    if (!str || !out || base == 1 || base > 16)
+    if (!str || !out || base == 1 || base > 16) [[unlikely]]
         return false;
 
     // 1) Skip leading spaces
@@ -125,11 +126,13 @@ bool cstr_to_num(
     _UIntType acc = 0;  // accumulator
 
     // 4) Parse digits
+    bool parse_more;
     ushort ndigits = 0;
     const char* startDigits = str;
-    for (; *str; ++str)
+    do
     {
         const char c = *str;
+        parse_more = (size_t(++str - startDigits) < stop_at_len);
         _UIntType digit;
         if (c >= '0' && c <= '9')
             digit = c - '0';
@@ -143,14 +146,16 @@ bool cstr_to_num(
             break;
         if (acc > maxDiv || (acc == maxDiv && digit > maxRem))
             return false;  // overflow
+
         acc = acc * base_casted + digit;
         ++ndigits;
-    }
+    } while (*str && (!stop_at_len || parse_more));
+
     if (str == startDigits)
         return false;  // no digits consumed
 
     // 5) Trailing‐space or end‐of‐string
-    if (!ignore_trailing_extra_chars)
+    if (!ignore_trailing_extra_chars && parse_more)
     {
         // Some old code expects string to num conversion to tolerate trailing whitespaces or even extra chars
         // (like the atoi C function).
@@ -203,73 +208,73 @@ bool cstr_to_num(
 }
 
 
-std::optional<char> Str_ToI8 (const tchar * ptcStr, uint base, bool fIgnoreExcessChars) noexcept
+std::optional<char> Str_ToI8 (const tchar * ptcStr, uint base, size_t uiStopAtLen, bool fIgnoreExcessChars) noexcept
 {
     char val = 0;
-    const bool fSuccess = cstr_to_num(ptcStr, &val, base, fIgnoreExcessChars);
+    const bool fSuccess = cstr_to_num(ptcStr, &val, base, uiStopAtLen, fIgnoreExcessChars);
     if (!fSuccess)
         return std::nullopt;
     return val;
 }
 
-std::optional<uchar> Str_ToU8 (const tchar * ptcStr, uint base, bool fIgnoreExcessChars) noexcept
+std::optional<uchar> Str_ToU8 (const tchar * ptcStr, uint base, size_t uiStopAtLen, bool fIgnoreExcessChars) noexcept
 {
     uchar val = 0;
-    const bool fSuccess = cstr_to_num(ptcStr, &val, base, fIgnoreExcessChars);
+    const bool fSuccess = cstr_to_num(ptcStr, &val, base, uiStopAtLen, fIgnoreExcessChars);
     if (!fSuccess)
         return std::nullopt;
     return val;
 }
 
-std::optional<short> Str_ToI16 (const tchar * ptcStr, uint base, bool fIgnoreExcessChars) noexcept
+std::optional<short> Str_ToI16 (const tchar * ptcStr, uint base, size_t uiStopAtLen, bool fIgnoreExcessChars) noexcept
 {
     short val = 0;
-    const bool fSuccess = cstr_to_num(ptcStr, &val, base, fIgnoreExcessChars);
+    const bool fSuccess = cstr_to_num(ptcStr, &val, base, uiStopAtLen, fIgnoreExcessChars);
     if (!fSuccess)
         return std::nullopt;
     return val;
 }
 
-std::optional<ushort> Str_ToU16 (const tchar * ptcStr, uint base, bool fIgnoreExcessChars) noexcept
+std::optional<ushort> Str_ToU16 (const tchar * ptcStr, uint base, size_t uiStopAtLen, bool fIgnoreExcessChars) noexcept
 {
     ushort val = 0;
-    const bool fSuccess = cstr_to_num(ptcStr, &val, base, fIgnoreExcessChars);
+    const bool fSuccess = cstr_to_num(ptcStr, &val, base, uiStopAtLen, fIgnoreExcessChars);
     if (!fSuccess)
         return std::nullopt;
     return val;
 }
 
-std::optional<int> Str_ToI (const tchar * ptcStr, uint base, bool fIgnoreExcessChars) noexcept
+std::optional<int> Str_ToI (const tchar * ptcStr, uint base, size_t uiStopAtLen, bool fIgnoreExcessChars) noexcept
 {
     int val = 0;
-    const bool fSuccess = cstr_to_num(ptcStr, &val, base, fIgnoreExcessChars);
+    const bool fSuccess = cstr_to_num(ptcStr, &val, base, uiStopAtLen, fIgnoreExcessChars);
     if (!fSuccess)
         return std::nullopt;
     return val;
 }
 
-std::optional<uint> Str_ToU(const tchar * ptcStr, uint base, bool fIgnoreExcessChars) noexcept
+std::optional<uint> Str_ToU(const tchar * ptcStr, uint base, size_t uiStopAtLen, bool fIgnoreExcessChars) noexcept
 {
     uint val = 0;
-    const bool fSuccess = cstr_to_num(ptcStr, &val, base, fIgnoreExcessChars);
+    const bool fSuccess = cstr_to_num(ptcStr, &val, base, uiStopAtLen, fIgnoreExcessChars);
     if (!fSuccess)
         return std::nullopt;
     return val;
 }
 
-std::optional<llong> Str_ToLL(const tchar * ptcStr, uint base, bool fIgnoreExcessChars) noexcept
+std::optional<llong> Str_ToLL(const tchar * ptcStr, uint base, size_t uiStopAtLen, bool fIgnoreExcessChars) noexcept
 {
     llong val = 0;
-    const bool fSuccess = cstr_to_num(ptcStr, &val, base, fIgnoreExcessChars);
+    const bool fSuccess = cstr_to_num(ptcStr, &val, base, uiStopAtLen, fIgnoreExcessChars);
     if (!fSuccess)
         return std::nullopt;
     return val;
 }
 
-std::optional<ullong> Str_ToULL(const tchar * ptcStr, uint base, bool fIgnoreExcessChars) noexcept
+std::optional<ullong> Str_ToULL(const tchar * ptcStr, uint base, size_t uiStopAtLen, bool fIgnoreExcessChars) noexcept
 {
     ullong val = 0;
-    const bool fSuccess = cstr_to_num(ptcStr, &val, base, fIgnoreExcessChars);
+    const bool fSuccess = cstr_to_num(ptcStr, &val, base, uiStopAtLen, fIgnoreExcessChars);
     if (!fSuccess)
         return std::nullopt;
     return val;
@@ -284,7 +289,7 @@ static constexpr tchar DIGITS[] = "0123456789abcdef";
 template<typename _IntType>
 tchar* Str_FromInt_Fast(_IntType val, lptstr_restrict out_buf, size_t buf_length, uint base) noexcept
 {
-    if (!out_buf || buf_length == 0 || base == 0 || base > 16)
+    if (!out_buf || buf_length == 0 || base == 0 || base > 16) [[unlikely]]
         return nullptr;
 
     const bool fHex = (base == 16);
@@ -332,14 +337,16 @@ tchar* Str_FromInt_Fast(_IntType val, lptstr_restrict out_buf, size_t buf_length
 
     // Write digits from back of buffer
 #define WRITE_OUT(ch)           \
-    do {                        \
+    {                           \
         if (idx == 0)           \
             return nullptr;     \
         out_buf[--idx] = (ch);  \
-    } while (0)
+    }
 
     size_t idx = buf_length;
     out_buf[--idx] = '\0';
+
+    // TODO: gracefully handle integer overflows, maybe printing a warning message.
 
     if (fHex)
     {
@@ -524,7 +531,7 @@ err:
     return (uiBufSize > 1) ? int(uiBufSize - 1) : 0; // Bytes written, excluding the string terminator.
 }
 
-bool IsStrEmpty( const tchar * pszTest )
+bool IsStrEmpty( const tchar * pszTest ) noexcept
 {
     if ( !pszTest || !*pszTest )
         return true;
@@ -538,7 +545,7 @@ bool IsStrEmpty( const tchar * pszTest )
     return true;
 }
 
-bool IsStrNumericDec( const tchar * pszTest )
+bool IsStrNumericDec( const tchar * pszTest ) noexcept
 {
     if ( !pszTest || !*pszTest )
         return false;
@@ -554,7 +561,7 @@ bool IsStrNumericDec( const tchar * pszTest )
 }
 
 
-bool IsStrNumeric( const tchar * pszTest )
+bool IsStrNumeric( const tchar * pszTest ) noexcept
 {
     if ( !pszTest || !*pszTest )
         return false;
@@ -575,7 +582,7 @@ bool IsStrNumeric( const tchar * pszTest )
     return true;
 }
 
-bool IsSimpleNumberString( lpctstr_restrict pszTest )
+bool IsSimpleNumberString( lpctstr_restrict pszTest ) noexcept
 {
     // is this a string or a simple numeric expression ?
     // string = 1 2 3, sdf, sdf sdf sdf, 123d, 123 d,
@@ -638,10 +645,10 @@ bool IsSimpleNumberString( lpctstr_restrict pszTest )
 // strncpy doesn't null-terminate if it truncates the copy, and if uiMaxlen is > than the source string length, the remaining space is filled with '\0'
 size_t Str_CopyLimit(lptstr_restrict pDst, lpctstr_restrict pSrc, const size_t uiMaxSize) noexcept
 {
-    if (uiMaxSize == 0)
+    if (uiMaxSize == 0) [[unlikely]]
         return 0;
 
-    if (pSrc[0] == '\0')
+    if (pSrc[0] == '\0') [[unlikely]]
     {
 
         pDst[0] = '\0';
@@ -660,11 +667,11 @@ size_t Str_CopyLimit(lptstr_restrict pDst, lpctstr_restrict pSrc, const size_t u
 
 size_t Str_CopyLimitNull(lptstr_restrict pDst, lpctstr_restrict pSrc, size_t uiMaxSize) noexcept
 {
-    if (uiMaxSize == 0)
+    if (uiMaxSize == 0) [[unlikely]]
     {
         return 0;
     }
-    if (pSrc[0] == '\0')
+    if (pSrc[0] == '\0') [[unlikely]]
     {
         pDst[0] = '\0';
         return 0;
@@ -686,6 +693,70 @@ size_t Str_CopyLimitNull(lptstr_restrict pDst, lpctstr_restrict pSrc, size_t uiM
     return len; // bytes copied in pDst string (not counting the string terminator)
 }
 
+/*
+// Copy up to max_len-1 chars from src to dst, NUL-terminate.
+// Returns number of chars written (excluding the terminator).
+size_t Str_CopyLimitNull_ShortStr(char* dst, const char* src, size_t max_len)
+{
+    if (max_len == 0) [[unlikely]]
+        return 0;
+
+    char* const start = dst;
+    size_t remaining = max_len - 1;
+
+    // Use 64-bit words on modern 64-bit targets
+    using word_t = std::conditional_t<sizeof(void*) >= 8, uint64_t, uint32_t>;
+    constexpr ushort W = static_cast<ushort>(sizeof(word_t));
+
+    // Magic constants for zero detection
+    // lomagic (0x0101010101010101ULL) subtracts 1 from each byte.
+    // himagic (0x8080808080808080ULL) is used to mask out the high bit of each byte.
+    // The expression ((w - lomagic) & ~w & himagic) evaluates to non-zero if any byte in the word was zero.
+    constexpr word_t lomagic = (W == 8 ? 0x0101010101010101ULL : 0x01010101U);
+    constexpr word_t himagic = (W == 8 ? 0x8080808080808080ULL : 0x80808080U);
+
+    // Word-wise loop (assumes unaligned loads/stores are fast)
+    while (remaining >= W)
+    {
+        // Direct unaligned load/store, acceptable for short strings
+        word_t w = *reinterpret_cast<const word_t*>(src);
+        *reinterpret_cast<word_t*>(dst) = w;
+
+        // Detect any zero byte
+        if (((w - lomagic) & ~w & himagic) != 0)
+        {
+            // Scan this word byte-by-byte for the exact NUL
+            for (size_t i = 0; i < W; ++i)
+            {
+                char c = src[i];
+                dst[i] = c;
+                if (c == '\0')
+                    return (dst + i) - start;
+            }
+            // Should never get here
+            ASSERT(false);
+        }
+        src += W;
+        dst += W;
+        remaining -= W;
+    }
+
+    // Tail bytes
+    while (remaining-- > 0)
+    {
+        const char c = *src++;
+        *dst++ = c;
+        if (c == '\0')
+            return dst - start - 1;
+    }
+
+    // Buffer full – append NUL
+    *dst = '\0';
+    return dst - start;
+}
+*/
+
+// Acceptable overhead for out use cases (non-performance critical).
 size_t Str_CopyLen(lptstr_restrict pDst, lpctstr_restrict pSrc) noexcept
 {
     strcpy(pDst, pSrc);
@@ -1016,7 +1087,8 @@ tchar * Str_GetUnQuoted(lptstr_restrict pStr) noexcept
 
 int Str_TrimEndWhitespace(tchar * pStr, int len) noexcept
 {
-    ASSERT(len >= 0);
+    if (!pStr) [[unlikely]]
+        return -1;
     while (len > 0 && IsWhitespace(pStr[len - 1])) {
         --len;
     }
@@ -1026,6 +1098,8 @@ int Str_TrimEndWhitespace(tchar * pStr, int len) noexcept
 
 tchar * Str_TrimWhitespace(tchar * pStr) noexcept
 {
+    if (!pStr) [[unlikely]]
+        return nullptr;
     GETNONWHITESPACE(pStr);
     Str_TrimEndWhitespace(pStr, (int)strlen(pStr));
     return pStr;
@@ -1033,7 +1107,7 @@ tchar * Str_TrimWhitespace(tchar * pStr) noexcept
 
 void Str_EatEndWhitespace(const tchar* const pStrBegin, tchar*& pStrEnd) noexcept
 {
-    if (pStrBegin == pStrEnd)
+    if (pStrBegin == pStrEnd) [[unlikely]]
         return;
 
     tchar* ptcPrev = pStrEnd - 1;
@@ -1046,83 +1120,6 @@ void Str_EatEndWhitespace(const tchar* const pStrBegin, tchar*& pStrEnd) noexcep
         ptcPrev = pStrEnd - 1;
     }
 }
-
-/*
-void Str_SkipEnclosedAngularBrackets(tchar*& ptcLine) noexcept
-{
-    // Move past a < > statement. It can have ( ) inside, if it happens, ignore < > characters inside ().
-    bool fOpenedOneAngular = false;
-    int iOpenAngular = 0, iOpenCurly = 0;
-    tchar* ptcTest = ptcLine;
-    while (const tchar ch = *ptcTest)
-    {
-        if (IsWhitespace(ch))
-            ;
-        else if (ch == '(')
-            ++iOpenCurly;
-        else if (ch == ')')
-            --iOpenCurly;
-        else if (iOpenCurly == 0)
-        {
-            if (ch == '<')
-            {
-                bool fOperator = false;
-                if ((ptcTest[1] == '<') && (ptcTest[2] != '\0') && IsWhitespace(ptcTest[2]))
-                {
-                    // I want a whitespace after the operator and some text after it.
-                    const tchar * ptcOpTest = &(ptcTest[3]);
-                    if (*ptcOpTest != '\0')
-                    {
-                        GETNONWHITESPACE(ptcOpTest);
-                        if (*ptcOpTest != '\0')  // There's more text to parse
-                        {
-                            // I guess i have sufficient proof: skip, it's a << operator
-                            fOperator = true;
-                            ptcTest += 2; // Skip the second > and the following whitespace
-                        }
-                    }
-                }
-                if (!fOperator)
-                {
-                    fOpenedOneAngular = true;
-                    ++iOpenAngular;
-                }
-            }
-            else if (ch == '>')
-            {
-                bool fOperator = false;
-                if ((ptcTest[1] == '>') && (ptcTest[2] != '\0') && IsWhitespace(ptcTest[2]))
-                {
-                    if ((ptcLine == ptcTest) || ((iOpenAngular > 0) && IsWhitespace(*(ptcTest - 1))))
-                    {
-                        const tchar * ptcOpTest = &(ptcTest[3]);
-                        if (*ptcOpTest != '\0')
-                        {
-                            GETNONWHITESPACE(ptcOpTest);
-                            if (*ptcOpTest != '\0')  // There's more text to parse
-                            {
-                                // I guess i have sufficient proof: skip, it's a >> operator
-                                fOperator = true;
-                                ptcTest += 2; // Skip the second > and the following whitespace
-                            }
-                        }
-                    }
-                }
-                if (!fOperator)
-                {
-                    --iOpenAngular;
-                    if (fOpenedOneAngular && !iOpenAngular)
-                    {
-                        ptcLine = ptcTest + 1;
-                        return;
-                    }
-                }
-            }
-        }
-        ++ptcTest;
-    }
-}
-*/
 
 void Str_SkipEnclosedAngularBrackets(tchar*& ptcLine) noexcept
 {
@@ -1316,27 +1313,30 @@ int FindCAssocRegTableHeadSorted(const tchar * pszFind, const tchar * const* pps
     return -1;
 }
 
-bool Str_Check(const tchar * pszIn) noexcept
+bool Str_Untrusted_InvalidTermination(const tchar * pszIn, size_t uiMaxAcceptableSize) noexcept
 {
     if (pszIn == nullptr)
         return true;
 
     const tchar * p = pszIn;
-    while (*p != '\0' && (*p != 0x0A) && (*p != 0x0D))
+    while ((*p != '\0') && (*p != 0x0A /* '\n' */) && (*p != 0x0D /* '\r' */)
+           && ((p - pszIn) < ptrdiff_t(uiMaxAcceptableSize)))
+    {
         ++p;
+    }
 
     return (*p != '\0');
 }
 
-bool Str_CheckName(const tchar * pszIn) noexcept
+bool Str_Untrusted_InvalidName(const tchar * pszIn, size_t uiMaxAcceptableSize) noexcept
 {
     if (pszIn == nullptr)
         return true;
 
     const tchar * p = pszIn;
-    while (*p != '\0' &&
-        (
-        ((*p >= 'A') && (*p <= 'Z')) ||
+    while (*p != '\0' && ((p - pszIn) < ptrdiff_t(uiMaxAcceptableSize))
+        &&  (
+            ((*p >= 'A') && (*p <= 'Z')) ||
             ((*p >= 'a') && (*p <= 'z')) ||
             ((*p >= '0') && (*p <= '9')) ||
             ((*p == ' ') || (*p == '\'') || (*p == '-') || (*p == '.'))

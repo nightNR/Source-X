@@ -1,5 +1,5 @@
 
-#include "CException.h"
+//#include "CException.h" // included in the precompiled header
 
 #ifdef WINDOWS_SHOULD_EMIT_CRASH_DUMP
 #include "crashdump/crashdump.h"
@@ -25,6 +25,7 @@ int IsDebuggerPresent(void)
 		return 0;
 
 	ssize_t num_read = read(status_fd, buf, sizeof(buf)-1);
+    close(status_fd);
 
 	if (num_read > 0)
 	{

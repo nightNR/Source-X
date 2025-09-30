@@ -6,7 +6,8 @@
 #include "../common/sphere_library/sresetevents.h"
 #include "../common/sphere_library/sstringobjs.h"
 #include "../common/basic_threading.h"
-#include "../common/CException.h"
+//#include "../common/CException.h" // included in the precompiled header
+//#include "../common/CExpression.h" // included in the precompiled header
 #include "../common/CLog.h"
 #include "../game/CServer.h"
 #include "ProfileTask.h"
@@ -153,7 +154,7 @@ AbstractThread* ThreadHolder::current() noexcept
 
             auto thread = static_cast<AbstractThread *>(found->second);
 
-            ASSERT(thread->m_threadHolderId != -1);
+            ASSERT(thread->m_threadHolderId != ThreadHolder::m_kiInvalidThreadID);
             SphereThreadData *tdata = &(m_threads[thread->m_threadHolderId]);
             if (tdata->m_closed)
             [[unlikely]]
@@ -203,8 +204,8 @@ void ThreadHolder::push(AbstractThread *thread) noexcept
 
         std::unique_lock<std::shared_mutex> lock(m_mutex);
 
-        ASSERT(thread->m_threadSystemId != 0);
-        ASSERT(thread->m_threadHolderId == -1);
+        //ASSERT(thread->m_threadSystemId != 0);
+        ASSERT(thread->m_threadHolderId == ThreadHolder::m_kiInvalidThreadID);
 
         m_threads.emplace_back( SphereThreadData{ thread, false });
         thread->m_threadHolderId = m_threadCount;
@@ -356,7 +357,7 @@ AbstractThread * ThreadHolder::getThreadAt(size_t at) noexcept
 int AbstractThread::m_threadsAvailable = 0;
 
 AbstractThread::AbstractThread(const char *name, ThreadPriority priority) :
-    m_threadSystemId(0), m_threadHolderId(-1),
+    m_threadSystemId(0), m_threadHolderId(ThreadHolder::m_kiInvalidThreadID),
     _fKeepAliveAtShutdown(false), _fIsClosing(false)
 {
 	if( AbstractThread::m_threadsAvailable == 0 )
@@ -383,8 +384,10 @@ AbstractThread::AbstractThread(const char *name, ThreadPriority priority) :
 AbstractThread::~AbstractThread()
 {
 #ifdef _DEBUG
-    fprintf(stdout, "DEBUG: Destroying thread '%s' with ThreadHolder ID %d and system ID %" PRIu64 ".\n",
-        getName(), m_threadHolderId, (uint64)m_threadSystemId);
+    fprintf(stdout, "DEBUG: Destroying thread '%s' with ThreadHolder ID %d%s and system ID %" PRIu64 ".\n",
+        getName(), m_threadHolderId,
+        (m_threadHolderId == ThreadHolder::m_kiInvalidThreadID) ? " (never started)" : "",
+        (uint64)m_threadSystemId);
     fflush(stdout);
 #endif
 
@@ -448,12 +451,19 @@ void AbstractThread::terminate(bool ended)
 			// if the thread is current then terminating here will prevent cleanup from occurring
 			if (wasCurrentThread == false)
 			{
+                if (!m_handle.has_value())
+                {
+                    STDERR_LOG("AbstractThread::terminate: no handle?.\n");
+                }
+                else
+                {
 #ifdef _WIN32
-                TerminateThread(m_handle.value(), 0);
-                CloseHandle(m_handle.value());
+                    TerminateThread(m_handle.value(), 0);
+                    CloseHandle(m_handle.value());
 #else
-                pthread_cancel(m_handle.value()); // IBM say it so
+                    pthread_cancel(m_handle.value()); // IBM say it so
 #endif
+                }
 			}
 		}
 
@@ -793,9 +803,10 @@ AbstractSphereThread::AbstractSphereThread(const char *name, ThreadPriority prio
     : AbstractThread(name, priority)
 #ifdef THREAD_TRACK_CALLSTACK
     , m_stackInfo{}, m_stackInfoCopy{}, m_iStackPos(-1),
-    m_fFreezeCallStack(false),
-    m_iStackUnwindingStackPos(-1), m_iCaughtExceptionStackPos(-1)
+    m_iStackUnwindingStackPos(-1), m_iCaughtExceptionStackPos(-1),
+    m_fFreezeCallStack(false)
 #endif
+    , m_pExpr{std::make_unique<CExpression>()}
 {
 	// profiles that apply to every thread
 	m_profile.EnableProfile(PROFILE_IDLE);
@@ -967,10 +978,12 @@ void AbstractSphereThread::printStackTrace() noexcept
 			break;
 
         lpctstr extra = "";
-        if (i == m_iStackUnwindingStackPos) {
-            extra = "<-- last function call (stack unwinding detected here)";
+        if (i == m_iStackUnwindingStackPos)
+        {
+            extra = "<-- last tracked function call (stack unwinding detected here)";
         }
-        else if (i == m_iCaughtExceptionStackPos) {
+        else if (i == m_iCaughtExceptionStackPos)
+        {
             if (m_iStackUnwindingStackPos == -1)
                 extra = "<-- exception catch point (below is guessed and could be incorrect!)";
             else
@@ -981,7 +994,7 @@ void AbstractSphereThread::printStackTrace() noexcept
         if (origin)
         {
             if (m_uisignalExceptionStackUnwinding)
-                extra = "<-- last function call (stack unwinding began here)";
+                extra = "<-- last tracked function call (stack unwinding began here)";
             else
                 extra = "<-- exception catch point (below is guessed and could be incorrect!)";
         }
@@ -1058,10 +1071,9 @@ StackDebugInformation::StackDebugInformation(const char *name) noexcept
 	}
 
 	m_context = static_cast<AbstractSphereThread*>(icontext);
-    if (m_context != nullptr && !m_context->closing())
+    if (m_context != nullptr && !m_context->closing()) [[likely]]
 	{
-        [[unlikely]]
-		m_context->pushStackCall(name);
+        m_context->pushStackCall(name);
 	}
 }
 

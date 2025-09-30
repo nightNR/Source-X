@@ -1,7 +1,7 @@
 
 #ifndef _WIN32
 
-#include "../common/CException.h"
+//#include "../common/CException.h" // included in the precompiled header
 #include "UnixTerminal.h"
 
 #ifndef _USECURSES
@@ -264,8 +264,8 @@ void UnixTerminal::prepareColor()
 
 void UnixTerminal::restore()
 {
-	ADDTOCALLSTACK("UnixTerminal::restore");
-	ASSERT(m_prepared);
+    if (!m_prepared)
+        return;
 
 #ifdef _USECURSES
 	endwin();	// clean up

@@ -44,7 +44,7 @@ bool CResourceScript::_CheckForChange()
 bool CResourceScript::CheckForChange()
 {
     ADDTOCALLSTACK("CResourceScript::CheckForChange");
-    MT_UNIQUE_LOCK_RETURN(CResourceScript::_CheckForChange());
+    MT_UNIQUE_LOCK_RETURN(this, CResourceScript::_CheckForChange());
 }
 
 void CResourceScript::ReSync()
@@ -55,7 +55,7 @@ void CResourceScript::ReSync()
     _fCacheToBeUpdated = true;
     if ( !Open() )
         return;
-    g_Cfg.LoadResourcesOpen( this );
+    g_Cfg.LoadResourcesOpen( this, true );
     Close();
 }
 
@@ -74,9 +74,9 @@ bool CResourceScript::Open( lpctstr pszFilename, uint wFlags )
         if ( CheckForChange() )
         {
             //  what should we do about it ? reload it of course !
-            g_Serv.SetServerMode(SERVMODE_ResyncLoad);
-            g_Cfg.LoadResourcesOpen( this );
-            g_Serv.SetServerMode(SERVMODE_Run);
+            g_Serv.SetServerMode(ServMode::ResyncLoad);
+            g_Cfg.LoadResourcesOpen( this, true );
+            g_Serv.SetServerMode(ServMode::Run);
         }
     }
     ASSERT(HasCache());

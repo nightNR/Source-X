@@ -1,6 +1,7 @@
 
-#include "../../common/CException.h"
-#include "../../common/CExpression.h"
+//#include "../../common/CException.h" // included in the precompiled header
+//#include "../../common/CExpression.h" // included in the precompiled header
+//#include "../../common/CScriptParserBufs.h" // included in the precompiled header via CExpression.h
 #include "../../common/CLog.h"
 #include "../../common/CScriptObj.h"
 #include "../../network/send.h"
@@ -241,12 +242,9 @@ bool CPartyDef::MessageEvent( CUID uidDst, CUID uidSrc, const nachar *pText, int
 	if ( uidDst.IsValidUID() && !IsInParty(uidDst.CharFind()) )
 		return false;
 
-	CChar *pFrom = uidSrc.CharFind();
-	CChar *pTo = nullptr;
-	if ( uidDst != (dword)0 )
-		pTo = uidDst.CharFind();
+    CChar *pFrom = uidSrc.CharFind();
     ASSERT(pFrom);
-    ASSERT(pTo);
+    CChar *pTo = (uidDst == (dword)0) ? nullptr : uidDst.CharFind();
 
 	tchar *szText = Str_GetTemp();
 	CvtNETUTF16ToSystem(szText, MAX_TALK_BUFFER, pText, MAX_TALK_BUFFER);
@@ -254,13 +252,13 @@ bool CPartyDef::MessageEvent( CUID uidDst, CUID uidSrc, const nachar *pText, int
 	if ( !m_pSpeechFunction.IsEmpty() )
 	{
 		TRIGRET_TYPE tr = TRIGRET_RET_FALSE;
-		CScriptTriggerArgs Args;
-		Args.m_iN1 = uidSrc.GetObjUID();
-		Args.m_iN2 = uidDst.GetObjUID();
-		Args.m_s1 = szText;
-		Args.m_s1_buf_vec = szText;
+        CScriptTriggerArgsPtr pScriptArgs = CScriptParserBufs::GetCScriptTriggerArgsPtr();
+        pScriptArgs->m_iN1 = uidSrc.GetObjUID();
+        pScriptArgs->m_iN2 = uidDst.GetObjUID();
+        pScriptArgs->m_s1 = szText;
+        pScriptArgs->m_s1_buf_vec = szText;
 
-		if ( r_Call(m_pSpeechFunction, &g_Serv, &Args, nullptr, &tr) )
+        if ( r_Call(m_pSpeechFunction, pScriptArgs, &g_Serv, nullptr, &tr) )
 		{
 			if ( tr == TRIGRET_RET_TRUE )
 				return false;
@@ -268,7 +266,10 @@ bool CPartyDef::MessageEvent( CUID uidDst, CUID uidSrc, const nachar *pText, int
 	}
 
 	if ( g_Log.IsLoggedMask(LOGM_PLAYER_SPEAK) )
-		g_Log.Event(LOGM_PLAYER_SPEAK|LOGM_NOCONTEXT, "%x:'%s' Says '%s' in party to '%s'\n", pFrom->GetClientActive()->GetSocketID(), pFrom->GetName(), szText, pTo ? pTo->GetName() : "all");
+        g_Log.Event(LOGM_PLAYER_SPEAK|LOGM_NOCONTEXT,
+            "%x:'%s' Says '%s' in party to '%s'\n",
+            pFrom->GetClientActive()->GetSocketID(), pFrom->GetName(), szText,
+            (pTo ? pTo->GetName() : "all"));
 
 	PacketPartyChat cmd(pFrom, pText);
 
@@ -319,13 +320,12 @@ bool CPartyDef::RemoveMember( CUID uidRemove, CUID uidCommand )
 	CChar *pSrc = uidCommand.CharFind();
 	if ( pSrc && IsTrigUsed(TRIGGER_PARTYREMOVE) )
 	{
-		CScriptTriggerArgs args;
-		if ( pCharRemove->OnTrigger(CTRIG_PartyRemove, pSrc, &args) == TRIGRET_RET_TRUE )
+        if ( pCharRemove->OnTrigger(CTRIG_PartyRemove, CScriptParserBufs::GetCScriptTriggerArgsPtr(), pSrc) == TRIGRET_RET_TRUE )
 			return false;
 	}
 	if ( IsTrigUsed(TRIGGER_PARTYLEAVE) )
 	{
-		if ( pCharRemove->OnTrigger(CTRIG_PartyLeave, pCharRemove, nullptr) == TRIGRET_RET_TRUE )
+        if ( pCharRemove->OnTrigger(CTRIG_PartyLeave, CScriptParserBufs::GetCScriptTriggerArgsPtr(), pCharRemove) == TRIGRET_RET_TRUE )
 			return false;
 	}
 
@@ -360,8 +360,7 @@ bool CPartyDef::Disband( CUID uidMaster )
 	CChar *pMaster = GetMaster().CharFind();
 	if ( pMaster && IsTrigUsed(TRIGGER_PARTYDISBAND) )
 	{
-		CScriptTriggerArgs args;
-		if ( pMaster->OnTrigger(CTRIG_PartyDisband, pMaster, &args) == TRIGRET_RET_TRUE )
+        if ( pMaster->OnTrigger(CTRIG_PartyDisband, CScriptParserBufs::GetCScriptTriggerArgsPtr(), pMaster) == TRIGRET_RET_TRUE )
 			return false;
 	}
 
@@ -378,9 +377,9 @@ bool CPartyDef::Disband( CUID uidMaster )
 
 		if ( IsTrigUsed(TRIGGER_PARTYREMOVE) )
 		{
-			CScriptTriggerArgs args;
-			args.m_iN1 = 1;
-			pChar->OnTrigger(CTRIG_PartyRemove, pSrc, &args);
+            CScriptTriggerArgsPtr pScriptArgs = CScriptParserBufs::GetCScriptTriggerArgsPtr();
+            pScriptArgs->m_iN1 = 1;
+            pChar->OnTrigger(CTRIG_PartyRemove, pScriptArgs, pSrc);
 		}
 
 		SendRemoveList(pChar, true);
@@ -454,11 +453,10 @@ bool CPartyDef::AcceptEvent( CChar *pCharAccept, CUID uidInviter, bool bForced, 
 		else
 			return false;
 	}
-	
+
 	if (IsTrigUsed(TRIGGER_PARTYADD))
-	{
-		CScriptTriggerArgs Args;
-		if ( pCharAccept->OnTrigger(CTRIG_PartyAdd, pCharInviter, &Args) == TRIGRET_RET_TRUE )
+    {
+        if ( pCharAccept->OnTrigger(CTRIG_PartyAdd, CScriptParserBufs::GetCScriptTriggerArgsPtr(), pCharInviter) == TRIGRET_RET_TRUE )
 			return false;
 	}
 
@@ -555,7 +553,7 @@ bool CPartyDef::r_GetRef( lpctstr &ptcKey, CScriptObj *&pRef )
 }
 
 bool CPartyDef::r_LoadVal( CScript &s )
-{ 
+{
 	ADDTOCALLSTACK("CPartyDef::r_LoadVal");
 	EXC_TRY("LoadVal");
 	lpctstr ptcKey = s.GetKey();
@@ -589,7 +587,7 @@ bool CPartyDef::r_LoadVal( CScript &s )
             lpctstr ptcArg = s.GetArgStr(&fQuoted);
             m_TagDefs.SetStr(ptcKey, fQuoted, ptcArg, fZero);
 		} break;
-		
+
 		default:
 			return false;
 	}
@@ -754,7 +752,7 @@ bool CPartyDef::r_Verb( CScript &s, CTextConsole *pSrc )
 
 			if ( pCharMaster && !fForced )
 				pCharMaster->SetKeyNum("PARTY_LASTINVITE", toAdd.GetObjUID());
-			
+
 			return CPartyDef::AcceptEvent(pCharAdd, GetMaster(), fForced);
 		} break;
 
@@ -886,10 +884,10 @@ bool CPartyDef::r_Verb( CScript &s, CTextConsole *pSrc )
 }
 
 bool CPartyDef::r_Load( CScript &s )
-{ 
+{
 	ADDTOCALLSTACK("CPartyDef::r_Load");
 	UnreferencedParameter(s);
-	return false; 
+	return false;
 }
 
 lpctstr CPartyDef::GetDefStr( lpctstr ptcKey, bool fZero ) const

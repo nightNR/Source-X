@@ -13,9 +13,9 @@ CSectorList::~CSectorList()
 	Close(true);
 }
 
-const CSectorList* CSectorList::Get() noexcept // static
+const CSectorList& CSectorList::Get() noexcept // static
 {
-	return &g_World._Sectors;
+    return g_World._Sectors;
 }
 
 void CSectorList::Init()
@@ -24,8 +24,9 @@ void CSectorList::Init()
 
 	if ( _fInitialized )	//	disable changes on-a-fly
 		return;
-	// Initialize sector data for every map plane
-	TemporaryString ts;
+
+	// Initialize sector data for every map plane    
+    TemporaryString ts;
 	TemporaryString tsConcat;
 
 	for (int iMap = 0; iMap < MAP_SUPPORTED_QTY; ++iMap)
@@ -38,24 +39,32 @@ void CSectorList::Init()
 		int iSectorIndex = 0;
 
 		MapSectorsData& sd = _SectorData[iMap];
-		sd._iSectorSize = sd._iSectorColumns = sd._iSectorRows = sd._iSectorQty = 0;
+		sd.iSectorSize = sd.iSectorColumns = sd.iSectorRows = sd.iSectorQty = 0;
 		sd._pSectors.reset();
 
 		if (!g_MapList.IsMapSupported(iMap))
 			continue;
 
-		const int iSectorQty = g_MapList.CalcSectorQty(iMap);
-		const int iMaxX = g_MapList.CalcSectorCols(iMap);
-		const int iMaxY = g_MapList.CalcSectorRows(iMap);
+        const int iSectorQty= g_MapList.CalcSectorQty(iMap);
+        const int iMaxX     = g_MapList.CalcSectorCols(iMap);
+        const int iMaxY     = g_MapList.CalcSectorRows(iMap);
 
 		snprintf(ts.buffer(), ts.capacity(), " map%d=%d", iMap, iSectorQty);
 		Str_ConcatLimitNull(tsConcat.buffer(), ts.buffer(), tsConcat.capacity());
 
 		sd._pSectors		= std::make_unique<CSector[]>(iSectorQty);
-		sd._iSectorSize		= g_MapList.GetSectorSize(iMap);
-		sd._iSectorQty		= iSectorQty;
-		sd._iSectorColumns	= iMaxX;
-		sd._iSectorRows		= iMaxY;
+		sd.iSectorSize		= g_MapList.GetSectorSize(iMap);
+		sd.iSectorQty		= iSectorQty;
+		sd.iSectorColumns	= iMaxX;
+		sd.iSectorRows		= iMaxY;
+
+        // Calc sector_shift (log2(iSectorSize)). We use this to do a bit shift instead of a division
+        //  when we do sector calculations (that is, very often).
+        uint32 sector_shift = 0;
+        for (uint sz = sd.iSectorSize; sz > 1; sz >>= 1)
+            ++sector_shift;
+        sd.uiSectorDivShift = (uint16)sector_shift;
+
 
 		short iSectorX = 0, iSectorY = 0;
 		for (; iSectorIndex < iSectorQty; ++iSectorIndex)
@@ -65,6 +74,7 @@ void CSectorList::Init()
 				iSectorX = 0;
 				++iSectorY;
 			}
+
 			CSector* pSector = &(sd._pSectors[iSectorIndex]);
 			ASSERT(pSector);
 			pSector->Init(iSectorIndex, (uchar)iMap, iSectorX, iSectorY);
@@ -77,7 +87,7 @@ void CSectorList::Init()
 		if (!sd._pSectors)
 			continue;
 
-		for (int iSector = 0; iSector < sd._iSectorQty; ++iSector)
+		for (int iSector = 0; iSector < sd.iSectorQty; ++iSector)
 		{
 			sd._pSectors[iSector].SetAdjacentSectors();
 		}
@@ -97,7 +107,7 @@ void CSectorList::Close(bool fClosingWorld)
 			continue;
 
 		// Delete everything in sector
-		for (int iSector = 0; iSector < sd._iSectorQty; ++iSector)
+		for (int iSector = 0; iSector < sd.iSectorQty; ++iSector)
 		{
 			sd._pSectors[iSector].Close(fClosingWorld);
 		}
@@ -106,52 +116,56 @@ void CSectorList::Close(bool fClosingWorld)
 }
 
 
-#define IsMapInvalid(map)	((map < 0) || (map >= MAP_SUPPORTED_QTY))
-
-int CSectorList::GetSectorSize(int map) const noexcept
+[[nodiscard]]
+const MapSectorsData& CSectorList::GetMapSectorData(int map) const
 {
-	return (IsMapInvalid(map) ? -1 : _SectorData[map]._iSectorSize);
+    DEBUG_ASSERT(g_MapList.IsMapSupported(map));
+    return _SectorData[map];
 }
 
-int CSectorList::GetSectorQty(int map) const noexcept
+CSector* CSectorList::GetSectorByIndex(int map, int index) const noexcept
 {
-	return (IsMapInvalid(map) ? -1 : _SectorData[map]._iSectorQty);
-}
-
-int CSectorList::GetSectorCols(int map) const noexcept
-{
-	return (IsMapInvalid(map) ? -1 : _SectorData[map]._iSectorColumns);
-}
-
-int CSectorList::GetSectorRows(int map) const noexcept
-{
-	return (IsMapInvalid(map) ? -1 : _SectorData[map]._iSectorRows);
-}
-
-CSector* CSectorList::GetSector(int map, int index) const noexcept
-{
-	if (IsMapInvalid(map) || !_SectorData[map]._pSectors)
-		return nullptr;
-	const MapSectorsData& sd = _SectorData[map];
-	return (index < sd._iSectorQty) ? &(sd._pSectors[index]) : nullptr;
-}
-
-CSector* CSectorList::GetSector(int map, short x, short y) const noexcept
-{
-	if (IsMapInvalid(map) || !_SectorData[map]._pSectors)
-		return nullptr;
+    // We call this method very often and from places we ASSUME have already checked that the map number is legit.
+    // Micro-optimization: Skip the function call and the if statement to avoid the possible cost of a branch misprediction.
+    //if (!g_MapList.IsMapSupported(map) || !_SectorData[map]._pSectors)
+    //	return nullptr;
 
 	const MapSectorsData& sd = _SectorData[map];
-	const int xSect = (x / sd._iSectorSize), ySect = (y / sd._iSectorSize);
-	if ((xSect >= sd._iSectorColumns) || (ySect >= sd._iSectorRows))
-		return nullptr;
-
-	const int index = ((ySect * sd._iSectorColumns) + xSect);
-	return (index < sd._iSectorQty) ? &(sd._pSectors[index]) : nullptr;
+    //return (index < sd.iSectorQty) ? &(sd._pSectors[index]) : nullptr;
+    return (index < sd.iSectorQty) ? &(sd._pSectors.get()[index]) : nullptr;
 }
 
-#undef IsMapInvalid
+CSector* CSectorList::GetSectorByCoordsUnchecked(int map, short x, short y) const noexcept
+{
+    // We call this method very often and from places we ASSUME have already checked that the map number is legit.
+    // Micro-optimization: Skip the IsMapSupported function call and the if statement to avoid the possible cost of a branch misprediction.
+    //if (!g_MapList.IsMapSupported(map) || !_SectorData[map]._pSectors)
+    //	return nullptr;
 
+	const MapSectorsData& sd = _SectorData[map];
+
+    // We know that sector sizes MUST be multiple of 2, so just use bit shifts.
+    //const int xSectTest = (x / sd.iSectorSize), ySectTest = (y / sd.iSectorSize);
+    const int xSect = (x >> sd.uiSectorDivShift), ySect = (y >> sd.uiSectorDivShift);
+    //ASSERT(xSectTest == xSect);
+    //ASSERT(ySectTest == ySect);
+
+/*
+#ifdef _DEBUG
+    // We also assume that X and Y are inside map boundaries.
+	if ((xSect >= sd.iSectorColumns) || (ySect >= sd.iSectorRows))
+		return nullptr;
+
+    const int index = ((ySect * sd.iSectorColumns) + xSect);
+    return (index < sd.iSectorQty) ? &(sd._pSectors[index]) : nullptr;
+#else
+*/
+    const int index = ((ySect * sd.iSectorColumns) + xSect);
+    DEBUG_ASSERT(index < sd.iSectorQty);
+    return &(sd._pSectors[index]);
+//#endif
+
+}
 
 int CSectorList::GetSectorAbsoluteQty() const noexcept
 {
@@ -159,9 +173,9 @@ int CSectorList::GetSectorAbsoluteQty() const noexcept
 	for (const MapSectorsData& sd : _SectorData)
 	{
 		if (!sd._pSectors)
-			continue;
+            continue;
 
-		iCount += sd._iSectorQty;
+		iCount += sd.iSectorQty;
 	}
 	return iCount;
 }
@@ -172,15 +186,15 @@ CSector* CSectorList::GetSectorAbsolute(int index) noexcept
 	{
 		const MapSectorsData& sd = _SectorData[m];
 		if (!sd._pSectors)
-			continue;
+            continue;   // WTF?
 
-		if ((base + sd._iSectorQty) > index)
+		if ((base + sd.iSectorQty) > index)
 		{
 			const int iSummation = (index - base);
 			return &(sd._pSectors[iSummation]);
 		}
 
-		base += sd._iSectorQty;
+		base += sd.iSectorQty;
 	}
 	return nullptr;
 }

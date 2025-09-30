@@ -1,4 +1,4 @@
-#include "../common/CException.h"
+//#include "../common/CException.h" // included in the precompiled header
 #include "../common/CLog.h"
 #include "../common/CRect.h"
 #include "../game/CWorld.h"
@@ -150,19 +150,19 @@ void CItemsList::AddItemToSector( CItem * pItem )
 }
 
 
-
 //////////////////////////////////////////////////////////////////
 // -CSectorBase
 
 void CSectorBase::SetAdjacentSectors()
 {
-	const CSectorList* pSectors = CSectorList::Get();
+    const CSectorList& pSectors = CSectorList::Get();
+    auto const& sd = pSectors.GetMapSectorData(m_BasePoint.m_map);
 
-    const int iMaxX = pSectors->GetSectorCols(m_map);
+    const int iMaxX = sd.iSectorColumns;
     ASSERT(iMaxX > 0);
-    [[maybe_unused]] const int iMaxY = pSectors->GetSectorRows(m_map);
+    [[maybe_unused]] const int iMaxY = sd.iSectorRows;
     ASSERT(iMaxY > 0);
-    const int iMaxSectors = pSectors->GetSectorQty(m_map);
+    const int iMaxSectors = sd.iSectorQty;
 
     // Sectors are layed out in the array horizontally: when the row is complete (X), the subsequent sector is placed in
     //  the column below (Y).
@@ -197,8 +197,14 @@ void CSectorBase::SetAdjacentSectors()
     for (int i = 0; i < (int)DIR_QTY; ++i)
     {
         // out of bounds checks
-		const int iAdjX = _x + _xyDir[i].x;
-		const int iAdjY = _y + _xyDir[i].y;
+        const int iAdjX = m_BasePoint.m_x + _xyDir[i].x;
+        // These checks are needed or the negative iAdjX/iAdjY can lead to a wrong index if the sector is near the map borders.
+        // For instance m_index = 0, iAdjY > 0 and iAdjX < 0, SW check, the index start from the first column of the second row and it goes back to the first row because there is no SW sector
+        if ((iAdjX < 0) || (iAdjX >= iMaxX))
+            continue;
+        const int iAdjY = m_BasePoint.m_y + _xyDir[i].y;
+        if ((iAdjY < 0) || (iAdjY >= iMaxY))
+            continue;
 
 		int index = m_index;
         index  += ((iAdjY * iMaxX) + iAdjX);
@@ -206,7 +212,7 @@ void CSectorBase::SetAdjacentSectors()
         {
             continue;
         }
-        _ppAdjacentSectors[(DIR_TYPE)i] = pSectors->GetSector(m_map, index);
+        _ppAdjacentSectors[(DIR_TYPE)i] = pSectors.GetSectorByIndex(m_BasePoint.m_map, index);
     }
 }
 
@@ -219,10 +225,8 @@ CSector *CSectorBase::_GetAdjacentSector(DIR_TYPE dir) const
 CSectorBase::CSectorBase() :
     _ppAdjacentSectors{{}}
 {
-	m_map = 0;
 	m_index = 0;
 	m_dwFlags = 0;
-	_x = _y = -1;
     //memset(_ppAdjacentSectors, 0, DIR_QTY * sizeof(_ppAdjacentSectors));
 }
 
@@ -232,30 +236,41 @@ void CSectorBase::Init(int index, uchar map, short x, short y)
 	if (!g_MapList.IsMapSupported(map) || !g_MapList.IsInitialized(map))
 	{
 		g_Log.EventError("Trying to initalize a sector %d in unsupported map #%d. Defaulting to 0,0.\n", index, map);
+        return;
 	}
-	else if (( index < 0 ) || ( index >= CSectorList::Get()->GetSectorQty(map) ))
+    if (( index < 0 ) || ( index >= CSectorList::Get().GetMapSectorData(map).iSectorQty ))
 	{
-		m_map = map;
+        m_BasePoint.m_map = map;
 		g_Log.EventError("Trying to initalize a sector by sector number %d out-of-range for map #%d. Defaulting to 0,%d.\n", index, map, map);
+        return;
 	}
-	else
-	{
-        ASSERT(x >= 0 && y >= 0);
-		m_index = index;
-		m_map = map;
-        _x = x;
-        _y = y;
-	}
-}
 
-bool CSectorBase::IsInDungeon() const
-{
-	ADDTOCALLSTACK("CSectorBase::IsInDungeon");
-	// What part of the maps are filled with dungeons.
-	// Used for light / weather calcs.
-	CRegion *pRegion = GetRegion(GetBasePoint(), REGION_TYPE_AREA);
+    ASSERT(x >= 0 && y >= 0);
+    m_index = index;
 
-	return ( pRegion && pRegion->IsFlag(REGION_FLAG_UNDERGROUND) );
+    // Set BasePoint.
+    auto const& sd = CSectorList::Get().GetMapSectorData(map);
+    DEBUG_ASSERT((m_index >= 0) && (m_index < sd.iSectorQty) );
+
+    const int iCols = sd.iSectorColumns, iSize = sd.iSectorSize;
+    const int iQuot = (m_index % iCols), iRem = (m_index / iCols); // Help the compiler to optimize the division
+    m_BasePoint = // Initializer list for CPointMap, it's the fastest way to return an object (requires less optimizations, which aren't used in debug build)
+        {
+            (short)(iQuot * iSize),	// x
+            (short)(iRem * iSize),	// y
+            0,						// z
+            (uint8)map              // m
+        };
+
+    // Set MapRect.
+    m_MapRect = // Initializer list for CRectMap, it's the fastest way to return an object (requires less optimizations, which aren't used in debug build)
+        CRectMap {
+            m_BasePoint.m_x,			// left
+            m_BasePoint.m_y,			// yop
+            m_BasePoint.m_x + iSize,	// right: East
+            m_BasePoint.m_y + iSize,	// bottom: South
+            m_BasePoint.m_map			// map
+        };
 }
 
 CRegion * CSectorBase::GetRegion( const CPointBase & pt, dword dwType ) const
@@ -442,47 +457,4 @@ bool CSectorBase::AddTeleport( CTeleport * pTeleport )
 	}
 	m_Teleports.AddSortKey( pTeleport, pTeleport->GetPointSortIndex());
 	return true;
-}
-
-bool CSectorBase::IsFlagSet( dword dwFlag ) const noexcept
-{
-	return (( m_dwFlags & dwFlag) ? true : false );
-}
-
-CPointMap CSectorBase::GetBasePoint() const
-{
-	// ADDTOCALLSTACK_DEBUG("CSectorBase::GetBasePoint"); // It's commented because it's slow and this method is called VERY often!
-	// What is the coord base of this sector. upper left point.
-	const CSectorList* pSectors = CSectorList::Get();
-#if _DEBUG
-	DEBUG_ASSERT( (m_index >= 0) && (m_index < pSectors->GetSectorQty(m_map)) );
-	// Again this method is called very often, so call the least functions possible and do the minimum amount of checks required
-#endif
-    const int iCols = pSectors->GetSectorCols(m_map);
-    const int iSize = pSectors->GetSectorSize(m_map);
-
-	const int iQuot = (m_index % iCols), iRem = (m_index / iCols); // Help the compiler to optimize the division
-	return // Initializer list for CPointMap, it's the fastest way to return an object (requires less optimizations, which aren't used in debug build)
-	{
-		(short)(iQuot * iSize),	// x
-		(short)(iRem * iSize),	// y
-		0,						// z
-		m_map					// m
-	};
-}
-
-CRectMap CSectorBase::GetRect() const noexcept
-{
-    //ADDTOCALLSTACK_DEBUG("CSectorBase::GetRect"); // It's commented because it's slow and this method is called VERY often!
-	// Get a rectangle for the sector.
-	const CPointMap& pt = GetBasePoint();
-    const int iSectorSize = CSectorList::Get()->GetSectorSize(pt.m_map);
-	return // Initializer list for CRectMap, it's the fastest way to return an object (requires less optimizations, which aren't used in debug build)
-	{
-		pt.m_x,					// left
-		pt.m_y,					// yop
-		pt.m_x + iSectorSize,	// right: East
-		pt.m_y + iSectorSize,	// bottom: South
-		pt.m_map				// map
-	};
 }

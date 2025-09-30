@@ -99,11 +99,12 @@ class CSectorBase		// world sector
 
 
 protected:
-	uchar m_map;    // sector map
-    short _x, _y;   // x and y (row and column) of the sector in the map
-	int	m_index;    // sector index
+    int	m_index;            // Sector index in the 'sector grid'
+    CPointBase m_BasePoint; // Sector coordinates in the 'sector grid'.
+    CRectMap   m_MapRect;   // Map area inside this sector.
 
 private:
+    // TODO: store indices instead of pointers, to make the class smaller?
 	CSector* _ppAdjacentSectors[DIR_QTY];
 
 public:
@@ -136,11 +137,9 @@ public:
 	virtual void Init(int index, uchar map, short x, short y);
 
 	// Location map units.
-	int GetIndex() const noexcept { return m_index; }
-	int GetMap() const noexcept { return m_map; }
-	CPointMap GetBasePoint() const;
-	CRectMap GetRect() const noexcept;
-	bool IsInDungeon() const;
+    int GetIndex() const noexcept               { return m_index; }
+    int GetMap() const noexcept                 { return m_BasePoint.m_map; }
+    constexpr inline const CRectMap& GetRect() const noexcept   { return m_MapRect; }
 
 	// CRegion
 	CRegion * GetRegion( const CPointBase & pt, dword dwType ) const;
@@ -153,7 +152,9 @@ public:
 	CTeleport * GetTeleport( const CPointMap & pt ) const;
 	bool AddTeleport( CTeleport * pTeleport );
 
-	bool IsFlagSet( dword dwFlag ) const noexcept;
+    bool IsFlagSet( dword dwFlag ) const noexcept {
+        return (m_dwFlags & dwFlag);
+    }
 
 #define SECF_NoSleep	0x00000001
 #define SECF_InstaSleep	0x00000002

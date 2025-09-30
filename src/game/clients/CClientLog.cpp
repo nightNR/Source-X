@@ -4,8 +4,9 @@
 #include "../../common/crypto/CHuffman.h"
 #include "../../common/sphere_library/CSFileList.h"
 #include "../../common/CLog.h"
-#include "../../common/CException.h"
-#include "../../common/CExpression.h"
+//#include "../../common/CException.h" // included in the precompiled header
+//#include "../../common/CExpression.h" // included in the precompiled header
+//#include "../../common/CScriptParserBufs.h" // included in the precompiled header via CExpression.h
 #include "../../network/CIPHistoryManager.h"
 #include "../../network/CNetworkManager.h"
 #include "../../network/send.h"
@@ -477,12 +478,14 @@ bool CClient::OnRxAxis( const byte * pData, uint iLen )
 						}
 						if (GetPeer().IsValidAddr())
 						{
-							CScriptTriggerArgs Args;
-							Args.m_VarsLocal.SetStrNew("Account",GetName());
-							Args.m_VarsLocal.SetStrNew("IP",GetPeer().GetAddrStr());
-							TRIGRET_TYPE tRet = TRIGRET_RET_DEFAULT;
-							r_Call("f_axis_preload", this, &Args, nullptr, &tRet);
-							if ( tRet == TRIGRET_RET_FALSE )
+                            CScriptTriggerArgsPtr pScriptArgs = CScriptParserBufs::GetCScriptTriggerArgsPtr();
+                            pScriptArgs->m_VarsLocal.SetStrNew("Account",GetName());
+                            pScriptArgs->m_VarsLocal.SetStrNew("IP",GetPeer().GetAddrStr());
+
+                            TRIGRET_TYPE tRet = TRIGRET_RET_DEFAULT;
+                            r_Call("f_axis_preload", pScriptArgs, this, nullptr, &tRet);
+
+                            if ( tRet == TRIGRET_RET_FALSE )
 								return false;
 							if ( tRet == TRIGRET_RET_TRUE )
 							{

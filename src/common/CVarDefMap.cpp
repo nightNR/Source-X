@@ -2,7 +2,7 @@
 #include "../common/CLog.h"
 #include "../game/CServer.h"
 #include "../game/CServerConfig.h"
-#include "CExpression.h"
+//#include "CExpression.h" // included in the precompiled header
 #include "CScript.h"
 #include "CTextConsole.h"
 #include "CVarDefMap.h"
@@ -62,7 +62,7 @@ bool CVarDefContNum::r_WriteVal( lpctstr pKey, CSString & sVal, CTextConsole * p
 }
 
 CVarDefCont * CVarDefContNum::CopySelf() const
-{ 
+{
 	return new CVarDefContNum( GetKey(), m_iVal );
 }
 
@@ -74,7 +74,7 @@ CVarDefCont * CVarDefContNum::CopySelf() const
 *
 ***************************************************************************/
 
-CVarDefContStr::CVarDefContStr( lpctstr ptcKey, lpctstr pszVal ) : m_sKey( ptcKey ), m_sVal( pszVal ) 
+CVarDefContStr::CVarDefContStr( lpctstr ptcKey, lpctstr pszVal ) : m_sKey( ptcKey ), m_sVal( pszVal )
 {
 }
 
@@ -88,7 +88,7 @@ int64 CVarDefContStr::GetValNum() const
 	return( Exp_Get64Val(pszStr) );
 }
 
-void CVarDefContStr::SetValStr( lpctstr pszVal ) 
+void CVarDefContStr::SetValStr( lpctstr pszVal )
 {
     const size_t uiLen = strlen(pszVal);
 	if (uiLen <= SCRIPT_MAX_LINE_LEN/2)
@@ -111,9 +111,9 @@ bool CVarDefContStr::r_WriteVal( lpctstr pKey, CSString & sVal, CTextConsole * p
 	return true;
 }
 
-CVarDefCont * CVarDefContStr::CopySelf() const 
-{ 
-	return new CVarDefContStr( GetKey(), m_sVal ); 
+CVarDefCont * CVarDefContStr::CopySelf() const
+{
+	return new CVarDefContStr( GetKey(), m_sVal );
 }
 
 
@@ -142,11 +142,11 @@ lpctstr CVarDefMap::FindValStr( lpctstr pVal ) const
 	for ( const CVarDefCont * pVarBase : m_Container )
 	{
 		ASSERT( pVarBase );
-		
+
 		const CVarDefContStr * pVarStr = dynamic_cast <const CVarDefContStr *>( pVarBase );
 		if ( pVarStr == nullptr )
 			continue;
-		
+
 		if ( ! strcmpi( pVal, pVarStr->GetValStr()))
 			return pVarBase->GetKey();
 	}
@@ -322,6 +322,11 @@ size_t CVarDefMap::GetCount() const noexcept
 	return m_Container.size();
 }
 
+void CVarDefMap::Reserve(size_t uiSize)
+{
+    m_Container.reserve(uiSize);
+}
+
 CVarDefContNum* CVarDefMap::SetNumNew( lpctstr pszName, int64 iVal )
 {
 	ADDTOCALLSTACK_DEBUG("CVarDefMap::SetNumNew");
@@ -401,16 +406,17 @@ CVarDefContNum* CVarDefMap::SetNum( lpctstr pszName, int64 iVal, bool fDeleteZer
 		return SetNumNew( pszName, iVal );
 
 	CVarDefContNum * pVarNum = dynamic_cast <CVarDefContNum *>( pVarBase );
+    const bool fShouldWarn = fWarnOverwrite && g_Serv.IsStartupLoadingScripts();
 	if ( pVarNum )
     {
-        if ( fWarnOverwrite && !g_Serv.IsResyncing() && g_Serv.IsLoading() )
-            DEBUG_WARN(( "Replacing existing VarNum '%s' with number: 0x%" PRIx64" \n", pVarBase->GetKey(), iVal ));
+        if ( fShouldWarn )
+            g_Log.EventWarn( "Replacing existing VarNum '%s' with number: 0x%" PRIx64" \n", pVarBase->GetKey(), iVal );
 		pVarNum->SetValNum( iVal );
     }
 	else
 	{
-		if ( fWarnOverwrite && !g_Serv.IsResyncing() && g_Serv.IsLoading() )
-			DEBUG_WARN(( "Replacing existing VarStr '%s' with number: 0x%" PRIx64" \n", pVarBase->GetKey(), iVal ));
+        if ( fShouldWarn )
+			g_Log.EventWarn( "Replacing existing VarStr '%s' with number: 0x%" PRIx64" \n", pVarBase->GetKey(), iVal );
 		return SetNumOverride( pszName, iVal );
 	}
 
@@ -484,14 +490,14 @@ CVarDefCont* CVarDefMap::SetStr( lpctstr pszName, bool fQuoted, lpctstr pszVal, 
 	CVarDefContStr * pVarStr = dynamic_cast <CVarDefContStr *>( pVarBase );
 	if ( pVarStr )
     {
-        if ( fWarnOverwrite && !g_Serv.IsResyncing() && g_Serv.IsLoading() )
-            DEBUG_WARN(( "Replacing existing VarStr '%s' with string: '%s'\n", pVarBase->GetKey(), pszVal ));
+        if ( fWarnOverwrite && !g_Serv.IsResyncing() && g_Serv.IsLoadingGeneric() )
+            g_Log.EventWarn( "Replacing existing VarStr '%s' with string: '%s'\n", pVarBase->GetKey(), pszVal );
 		pVarStr->SetValStr( pszVal );
     }
 	else
 	{
-		if ( fWarnOverwrite && !g_Serv.IsResyncing() && g_Serv.IsLoading() )
-			DEBUG_WARN(( "Replacing existing VarNum '%s' with string: '%s'\n", pVarBase->GetKey(), pszVal ));
+		if ( fWarnOverwrite && !g_Serv.IsResyncing() && g_Serv.IsLoadingGeneric() )
+			g_Log.EventWarn( "Replacing existing VarNum '%s' with string: '%s'\n", pVarBase->GetKey(), pszVal );
 		return SetStrOverride( pszName, pszVal );
 	}
 	return pVarStr;
@@ -505,7 +511,7 @@ CVarDefCont * CVarDefMap::GetKey( lpctstr ptcKey ) const
 	if ( ptcKey )
 	{
         const size_t idx = m_Container.find_predicate(ptcKey, VarDefCompare);
-		
+
 		if ( idx != sl::scont_bad_index() )
 			pReturn = m_Container[idx];
 	}
@@ -668,7 +674,7 @@ void CVarDefMap::r_WritePrefix( CScript & s, lpctstr ptcPrefix, lpctstr ptcKeyEx
         const lpctstr ptcKey = pVar->GetKey();
 		if ( fHasExclude && !strcmpi(ptcKeyExclude, ptcKey))
 			continue;
-		
+
         const CVarDefContNum * pVarNum = dynamic_cast<const CVarDefContNum*>(pVar);
         _WritePrefix(ptcKey);
         lpctstr ptcVal = pVar->GetValStr();

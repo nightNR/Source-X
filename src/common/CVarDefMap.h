@@ -100,7 +100,7 @@ public:
 
     void SetValStr( lpctstr pszVal );
     inline virtual lpctstr GetValStr() const override {
-        return m_sVal.GetBuffer(); 
+        return m_sVal.GetBuffer();
     }
     virtual int64 GetValNum() const override;
     virtual CVarDefCont * CopySelf() const override;
@@ -142,14 +142,13 @@ public:
 	bool CompareAll( const CVarDefMap * pArray );
 	void Clear();
 	size_t GetCount() const noexcept;
+    void Reserve(size_t uiSize);
 
 public:
 	CVarDefMap() = default;
 	~CVarDefMap();
 	CVarDefMap & operator = ( const CVarDefMap & array );
-
-private:
-	CVarDefMap(const CVarDefMap& copy);
+    CVarDefMap(const CVarDefMap& copy) = delete;
 
 public:
 	lpctstr FindValNum( int64 iVal ) const;

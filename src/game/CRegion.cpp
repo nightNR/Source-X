@@ -1,7 +1,8 @@
 // Common for client and server.
 #include "../common/resource/sections/CRandGroupDef.h"
 #include "../common/resource/CResourceLock.h"
-#include "../common/CExpression.h"
+//#include "../common/CExpression.h" // included in the precompiled header
+//#include "../common/CScriptParserBufs.h" // included in the precompiled header via CExpression.h
 #include "../network/CClientIterator.h"
 #include "chars/CChar.h"
 #include "clients/CClient.h"
@@ -17,9 +18,9 @@
 CRegion::CRegion( CResourceID rid, lpctstr pszName ) :
 	CResourceDef( rid )
 {
-	ADDTOCALLSTACK("CRegion::CRegion()");
-	m_dwFlags	= 0;
-	m_dwModifiedFlags	= 0;
+    ADDTOCALLSTACK("CRegion::CRegion");
+    m_dwFlags = 0;
+    m_dwModifiedFlags = 0;
 	m_iLinkedSectors = 0;
 	if ( pszName )
 		SetName( pszName );
@@ -72,10 +73,10 @@ bool CRegion::RealizeRegion()
 
 	// Attach to all sectors that i overlap.
 	ASSERT( m_iLinkedSectors == 0 );
-	const CSectorList* pSectors = CSectorList::Get();
-	for ( int i = 0, iMax = pSectors->GetSectorQty(m_pt.m_map); i < iMax; ++i )
+    const CSectorList& pSectors = CSectorList::Get();
+    for ( int i = 0, iMax = pSectors.GetMapSectorData(m_pt.m_map).iSectorQty; i < iMax; ++i )
 	{
-		CSector *pSector = pSectors->GetSector(m_pt.m_map, i);
+        CSector *pSector = pSectors.GetSectorByIndex(m_pt.m_map, i);
 
 		if ( pSector && IsOverlapped(pSector->GetRect()) )
 		{
@@ -874,7 +875,7 @@ TRIGRET_TYPE CRegion::OnRegionTrigger( CTextConsole * pSrc, RTRIG_TYPE iAction )
 		CResourceLock s;
 		if ( pLink->ResourceLock(s) )
 		{
-			iRet = CScriptObj::OnTriggerScript(s, sm_szTrigName[iAction], pSrc);
+            iRet = CScriptObj::OnTriggerScript(s, sm_szTrigName[iAction], CScriptParserBufs::GetCScriptTriggerArgsPtr(), pSrc);
 			if ( iRet == TRIGRET_RET_TRUE )
 				return iRet;
 		}
@@ -891,7 +892,7 @@ TRIGRET_TYPE CRegion::OnRegionTrigger( CTextConsole * pSrc, RTRIG_TYPE iAction )
 		if ( !pLink->ResourceLock(s) )
 			continue;
 
-		iRet = CScriptObj::OnTriggerScript(s, sm_szTrigName[iAction], pSrc);
+        iRet = CScriptObj::OnTriggerScript(s, sm_szTrigName[iAction], CScriptParserBufs::GetCScriptTriggerArgsPtr(), pSrc);
 		if ( iRet != TRIGRET_RET_FALSE && iRet != TRIGRET_RET_DEFAULT )
 			return iRet;
 	}
@@ -998,7 +999,6 @@ bool CRegionWorld::r_LoadVal( CScript &s )
 	EXC_DEBUG_END;
 	return false;
 }
-
 
 
 void CRegionWorld::r_WriteModified( CScript &s )
