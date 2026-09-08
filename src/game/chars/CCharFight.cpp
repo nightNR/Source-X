@@ -1276,7 +1276,17 @@ int CChar::Fight_CalcDamage(const CItem * pWeapon, bool fNoRandom, bool fGetMax 
 				}
 			    if ( !iStatBonusPercent )
 			        iStatBonusPercent = 10;
-			    iDmgBonus += CSRand::GetValFast(Stat_GetAdjusted(iStatBonus)) * iStatBonusPercent / 100;
+                if ( fNoRandom )
+                {
+                    // GetValFast rolls [0, stat), so expose stable bonus bounds in the status window.
+                    const int iStatValue = Stat_GetAdjusted(iStatBonus);
+                    const int iBonusLimit = (iStatValue > 1 ? iStatValue - 1 : 0) * iStatBonusPercent / 100;
+                    iDmgBonus += fGetMax ? maximum(0, iBonusLimit) : minimum(0, iBonusLimit);
+                }
+                else
+                {
+                    iDmgBonus += CSRand::GetValFast(Stat_GetAdjusted(iStatBonus)) * iStatBonusPercent / 100;
+                }
 				break;
 			}
 
