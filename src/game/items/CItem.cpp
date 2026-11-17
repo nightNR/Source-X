@@ -3754,6 +3754,12 @@ TRIGRET_TYPE CItem::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
     CItemBase * pItemDef = Item_GetDef();
     ASSERT(pItemDef);
 
+    // Another trigger may be already running on this item (this one is fired from inside it): restore it when this one ends,
+    //  instead of clearing it, otherwise that one isn't protected anymore from being called again by itself
+    //  (eg. @Unequip -> BOUNCE -> @DropOn_Item ends -> @Unequip can run again).
+    const short iPrevRunningTriggerId = _iRunningTriggerId;
+    CSString sPrevRunningTrigger(std::move(_sRunningTrigger));
+
     SetTriggerActive( pszTrigName );
     const ITRIG_TYPE iAction = (ITRIG_TYPE)_iRunningTriggerId;
     // Is there trigger code in the script file ?
@@ -3901,13 +3907,16 @@ from_itemdef_first:
 	}
 
 stopandret:
-    SetTriggerActive(nullptr);
+    _iRunningTriggerId = iPrevRunningTriggerId;
+    _sRunningTrigger = std::move(sPrevRunningTrigger);
     return iRet;
 	EXC_CATCH;
 
 	EXC_DEBUG_START;
     g_Log.EventDebug("trigger '%s' action '%d' char '0%x' [0%x]\n", pszTrigName, iAction, ((pSrc && pSrc->GetChar()) ? (dword)pSrc->GetChar()->GetUID() : 0), (dword)GetUID());
 	EXC_DEBUG_END;
+    _iRunningTriggerId = iPrevRunningTriggerId;
+    _sRunningTrigger = std::move(sPrevRunningTrigger);
 	return iRet;
 }
 

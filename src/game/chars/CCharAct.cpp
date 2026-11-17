@@ -5615,6 +5615,11 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
 	CCharBase* pCharDef = Char_GetDef();
     ASSERT(pCharDef);
 
+    // Another trigger may be already running on this char (this one is fired from inside it): restore it when this one ends,
+    //  instead of clearing it, otherwise that one isn't protected anymore from being called again by itself.
+    const short iPrevRunningTriggerId = _iRunningTriggerId;
+    CSString sPrevRunningTrigger(std::move(_sRunningTrigger));
+
     SetTriggerActive( pszTrigName );
     const CTRIG_TYPE iAction = (CTRIG_TYPE)_iRunningTriggerId;
     // Attach some trigger to the cchar. (PC or NPC)
@@ -5767,13 +5772,16 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
 	}
 
 stopandret:
-    SetTriggerActive(nullptr);
+    _iRunningTriggerId = iPrevRunningTriggerId;
+    _sRunningTrigger = std::move(sPrevRunningTrigger);
     return iRet;
 	EXC_CATCH;
 
 	EXC_DEBUG_START;
 	g_Log.EventDebug("trigger '%s' action '%d' [0%x]\n", pszTrigName, iAction, (dword)GetUID());
 	EXC_DEBUG_END;
+    _iRunningTriggerId = iPrevRunningTriggerId;
+    _sRunningTrigger = std::move(sPrevRunningTrigger);
 	return iRet;
 }
 
