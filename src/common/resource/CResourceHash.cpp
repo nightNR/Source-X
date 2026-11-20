@@ -68,6 +68,7 @@ void CResourceHashArray::ManualSort()
 
 void CResourceHash::AddSortKey(CResourceID const& rid, CResourceDef* pNew)
 {
+    ++m_uiModCount;
     ASSERT(rid.GetResPage() <= RES_PAGE_MAX); // RES_PAGE_ANY can be used only for search, you can't insert a rid with this special page
 
     auto& destArray = m_Array[GetHashArray(rid)];
@@ -78,6 +79,7 @@ void CResourceHash::AddSortKey(CResourceID const& rid, CResourceDef* pNew)
 
 void CResourceHash::AddUnsortedKey(CResourceID const& rid, CResourceDef* pNew)
 {
+    ++m_uiModCount;
     ASSERT(rid.GetResPage() <= RES_PAGE_MAX); // RES_PAGE_ANY can be used only for search, you can't insert a rid with this special page
 
     auto& destArray = m_Array[GetHashArray(rid)];
@@ -88,6 +90,7 @@ void CResourceHash::AddUnsortedKey(CResourceID const& rid, CResourceDef* pNew)
 
 void CResourceHash::SortStep()
 {
+    ++m_uiModCount;
     for (auto& arr : m_Array)
     {
         arr.ManualSort();
@@ -96,6 +99,7 @@ void CResourceHash::SortStep()
 
 void CResourceHash::SetAt(CResourceID const& rid, size_t index, CResourceDef* pNew)
 {
+    ++m_uiModCount;
     ASSERT(rid.GetResPage() <= RES_PAGE_MAX); // RES_PAGE_ANY can be used only for search, you can't insert a rid with this special page
     m_Array[GetHashArray(rid)][index].reset(pNew);
 }

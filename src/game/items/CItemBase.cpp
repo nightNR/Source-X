@@ -21,6 +21,7 @@
 #include "../uo_files/CUOItemTypeRec.h"
 #include "../CServerConfig.h"
 #include "CItemBase.h"
+#include <vector>
 
 
 /////////////////////////////////////////////////////////////////
@@ -2239,7 +2240,40 @@ bool CItemBaseMulti::r_WriteVal(lpctstr ptcKey, CSString & sVal, CTextConsole * 
 
 CItemBase * CItemBase::FindItemBase( ITEMID_TYPE id ) // static
 {
-    ADDTOCALLSTACK_DEBUG("CItemBase::FindItemBase");
+    // This is called very often (e.g. for every static on a tile when checking where a char can stand), and the lookup
+    // in the resource hash is a binary search over a big array, so cache the result for each art ID.
+    // A cached result is valid until the resource hash changes. Results of the calls that change it themselves
+    // (first request of a def, which loads it) are not cached.
+    struct CachedItemBase
+    {
+        CItemBase * pBase;
+        uint uiModCount;    // 0 = not cached
+    };
+    static std::vector<CachedItemBase> s_vCache((size_t)ITEMID_MULTI, CachedItemBase{nullptr, 0});
+
+    if ( (id <= ITEMID_NOTHING) || (id >= ITEMID_MULTI) )
+    {
+        return FindItemBaseUncached( id );
+    }
+
+    const uint uiModCount = g_Cfg.m_ResHash.m_uiModCount;
+    const CachedItemBase& cached = s_vCache[(size_t)id];
+    if ( cached.uiModCount == uiModCount )
+    {
+        return cached.pBase;
+    }
+
+    CItemBase * pBase = FindItemBaseUncached( id );
+    if ( uiModCount == g_Cfg.m_ResHash.m_uiModCount )
+    {
+        s_vCache[(size_t)id] = CachedItemBase{pBase, uiModCount};
+    }
+    return pBase;
+}
+
+CItemBase * CItemBase::FindItemBaseUncached( ITEMID_TYPE id ) // static
+{
+    ADDTOCALLSTACK_DEBUG("CItemBase::FindItemBaseUncached");
 	// CItemBase is a like item already loaded.
 	if ( id <= ITEMID_NOTHING )
 		return nullptr;
