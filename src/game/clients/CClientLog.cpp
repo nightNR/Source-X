@@ -642,7 +642,7 @@ bool CClient::OnRxPing( const byte * pData, uint iLen )
 			// word Unk		(0x04)
 			// byte SubCmd	(0xFF)
 
-            if ( iLen != make_word( pData[2], pData[1] ) )
+            if ( (iLen < 4) || (iLen != make_word( pData[2], pData[1] )) )	// pData[1..3] are read below
 				break;
 
 			if ( pData[3] != 0xFF )
