@@ -59,6 +59,7 @@ class CWorldSearch
     // Pointer to distance function:
     //  The ::* operator means "pointer to member of CPointMap".
     int (CPointMap::* _distanceFunction)(const CPointBase&) const noexcept;
+    bool _fMaxAxisDist;         // The distance function is max(dx, dy): check it inline, without calling _distanceFunction.
 
 public:
     static const char* m_sClassName;
@@ -81,9 +82,32 @@ public:
 private:
     void SetDistanceFunction();
 
+    inline bool IsInRange(const CPointMap& ptObj) const noexcept;
     bool GetNextSector();
     void LoadSectorObjs(CSObjCont const& pSectorObjList);
 };
+
+// This is called for every object in the searched sectors, so keep it inline and cheap.
+bool CWorldSearch::IsInRange(const CPointMap& ptObj) const noexcept
+{
+    if (!_fMaxAxisDist)
+    {
+        return ((_pt.*_distanceFunction)(ptObj) <= _iDist);
+    }
+
+    const int dx = (_pt.m_x > ptObj.m_x) ? (_pt.m_x - ptObj.m_x) : (ptObj.m_x - _pt.m_x);
+    const int dy = (_pt.m_y > ptObj.m_y) ? (_pt.m_y - ptObj.m_y) : (ptObj.m_y - _pt.m_y);
+    if (((dx >= dy) ? dx : dy) > _iDist)
+    {
+        return false;
+    }
+    if (_fAllShow || (_iDist >= INT16_MAX))
+    {
+        return true;
+    }
+    // GetDist and GetDistSight return INT16_MAX for a point on another map or not valid: check it only for the objects in range.
+    return ((ptObj.m_map == _pt.m_map) && ptObj.IsValidPoint());
+}
 
 struct CWorldSearchHolder
 {
