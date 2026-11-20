@@ -7,6 +7,7 @@
 #define _INC_CCHARBASE_H
 
 #include "../CBase.h"
+#include <atomic>
 
 
 class CFactionDef;
@@ -47,6 +48,10 @@ public:
 						// NPC info ----------------------------------------------------
 private:
 	uint m_iHireDayWage;		// if applicable. (NPC)
+
+	// Char height read from the height_<dispid> DEFs, cached because CChar::GetHeight is called very often.
+	// Packed as: (DEFs generation + 1) << 32 | dispid << 8 | height. 0 = not computed yet.
+	mutable std::atomic<uint64> _uiDefHeightCache{0};
 public:
 	//SHELTER=FORESTS (P), MOUNTAINS (P)
 	//AVERSIONS=TRAPS, CIVILIZATION
@@ -86,6 +91,26 @@ public:
 		return CREID_TYPE(m_dwDispIndex);
 	}
 	bool SetDispID( CREID_TYPE id );
+
+	// Cached height from the height_<dispid> DEFs: valid only for the same DEFs generation and dispid.
+	bool GetDefHeightCache( uint uiDefsGen, uint uiDispID, height_t * pHeight ) const noexcept
+	{
+		const uint64 uiCache = _uiDefHeightCache.load(std::memory_order_relaxed);
+		if ( (uiCache == 0) || (uiCache >> 32) != (uint64)(uiDefsGen + 1) || ((uiCache >> 8) & 0xFFFFFF) != uiDispID )
+		{
+			return false;
+		}
+		*pHeight = (height_t)(uiCache & 0xFF);
+		return true;
+	}
+	void SetDefHeightCache( uint uiDefsGen, uint uiDispID, height_t height ) const noexcept
+	{
+		if ( (uiDispID > 0xFFFFFF) || (uiDefsGen + 1 == 0) )
+		{
+			return;
+		}
+		_uiDefHeightCache.store(((uint64)(uiDefsGen + 1) << 32) | ((uint64)uiDispID << 8) | (uint64)height, std::memory_order_relaxed);
+	}
 
 	uint GetHireDayWage() const noexcept { return m_iHireDayWage; }
 
