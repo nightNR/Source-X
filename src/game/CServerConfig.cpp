@@ -3449,7 +3449,9 @@ bool CServerConfig::LoadResourceSection( CScript * pScript, bool fInsertSorted )
 			}
 			else
 			{
-                g_ExprGlobals.mtEngineLockedWriter()->m_VarDefs.SetStr(ptcKey, false, pScript->GetArgStr(), false, true);
+                auto gwriter = g_ExprGlobals.mtEngineLockedWriter();
+                gwriter->m_VarDefs.SetStr(ptcKey, false, pScript->GetArgStr(), false, true);
+                ++gwriter->m_uiVarDefsGen;
 			}
 		}
 

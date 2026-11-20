@@ -4283,3 +4283,4 @@ When setting a property like MORE to the a spell or skill defname, trying to rea
 
 20-11-2026, nightNR
 - Changed: faster trigger dispatch. Each event, chardef, itemdef and typedef section now remembers where its ON=@ triggers start, so firing a trigger jumps straight to it (or skips the section when it doesn't have the trigger) instead of re-reading the whole section text on every call. CChar and CItem OnTrigger also look up the trigger name only once per call. In a dense NPC test (about 1500 NPCs with a global @NPCLookAtChar event) the time spent in triggers dropped by about 30%.
+- Changed: the char height read from the height_<id> DEFs is now cached in the char def instead of being looked up (twice, with a lock) every time the height is needed, which happens on every step and line of sight check. The cache is refreshed when the DEFs change (scripts loaded or resynced). In a dense NPC test (about 1500 NPCs) this saved about 5% of the main thread time.
