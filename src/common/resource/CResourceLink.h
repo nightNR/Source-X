@@ -6,8 +6,10 @@
 #ifndef _INC_CRESOURCELINK_H
 #define _INC_CRESOURCELINK_H
 
+#include "../sphere_library/CSString.h"
 #include "../CScriptContexts.h"
 #include "CResourceDef.h"
+#include <vector>
 
 class CResourceScript;
 
@@ -26,6 +28,16 @@ private:
     CScriptLineContext m_Context;
 
     dword _dwRefInstances;	// How many CResourceRef objects refer to this ?
+
+    // Position right after each ON=@Trigger line of the linked section, filled by ScanSection.
+    // Lets the trigger code jump straight to a trigger instead of reading the section line by line.
+    struct TriggerContext
+    {
+        CSString sName;
+        CScriptLineContext context;
+    };
+    std::vector<TriggerContext> _vTriggerContexts;
+    bool _fTriggerContextsValid;    // false until ScanSection runs on the current link
 
 public:
     dword m_dwOnTriggers[MAX_TRIGGERS_ARRAY];
@@ -57,6 +69,12 @@ public:
     void SetTrigger( int i );
     bool HasTrigger( int i ) const;
     bool ResourceLock( CResourceLock & s );
+
+    // Lock the script and place it right after the ON= line of the given trigger, like ResourceLock + CScriptObj::OnTriggerFind.
+    // RETURN: 1 = found, s is ready for CScriptObj::OnTriggerScriptFound.
+    //         0 = the section has no such trigger.
+    //        -1 = the script can't be locked (same as ResourceLock failing).
+    int ResourceLockTrigger( CResourceLock & s, lpctstr ptcTrigName );
 
 public:
     CResourceLink(const CResourceID& rid, const CVarDefContNum * pDef = nullptr);
