@@ -8,6 +8,7 @@
 
 #include "../common/common.h"
 
+class CResourceLink;
 class CScript;
 class CTextConsole;
 class CSFileText;
@@ -120,6 +121,11 @@ public:
     virtual TRIGRET_TYPE OnTrigger(lpctstr pszTrigName, CScriptTriggerArgsPtr const& pScriptArgs, CTextConsole* pSrc);
 	bool OnTriggerFind(CScript& s, lpctstr pszTrigName);
     TRIGRET_TYPE OnTriggerScript(CScript& s, lpctstr pszTrigName, CScriptTriggerArgsPtr const& pScriptArgs, CTextConsole* pSrc);
+    // Like OnTriggerScript, but s is already placed after the ON= line of the trigger (see CResourceLink::ResourceLockTrigger).
+    TRIGRET_TYPE OnTriggerScriptFound(CScript& s, lpctstr pszTrigName, CScriptTriggerArgsPtr const& pScriptArgs, CTextConsole* pSrc);
+    // Run the trigger from a linked section (EVENTS, TEVENTS, CHARDEF, TYPEDEF...) on this object. Same as ResourceLock + OnTriggerScript.
+    // RETURN: false = the script can't be locked, iRet is not changed.
+    bool OnTriggerLink(CResourceLink* pLink, lpctstr pszTrigName, CScriptTriggerArgsPtr const& pScriptArgs, CTextConsole* pSrc, TRIGRET_TYPE& iRet);
     TRIGRET_TYPE OnTriggerRun(CScript& s, TRIGRUN_TYPE trigger, CScriptTriggerArgsPtr const& pScriptArgs, CTextConsole* pSrc, CSString* pReturn);
     TRIGRET_TYPE OnTriggerRunVal(CScript& s, TRIGRUN_TYPE trigger, CScriptTriggerArgsPtr const& pScriptArgs, CTextConsole* pSrc);
 

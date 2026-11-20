@@ -20,6 +20,7 @@ enum E_TRIGGERS
 
 bool IsTrigUsed(E_TRIGGERS id);
 bool IsTrigUsed(const char *name);
+int TriglistFindIndex(const char *name);   // E_TRIGGERS index of the trigger name, -1 if it's a custom trigger
 void TriglistInit();
 void TriglistClear();
 void TriglistAdd(E_TRIGGERS id);
