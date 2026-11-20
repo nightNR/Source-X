@@ -27,7 +27,8 @@ void CEntity::Delete(bool fForce)
         ASSERT(pComponent);
         pComponent->Delete(fForce);
     }
-    _lComponents.clear();
+    // Keep the components: they are freed when the object is destroyed (ClearComponents).
+    // Clearing the list here leaked them, and freeing them here isn't safe: a script trigger fired by a component can remove its own object.
 }
 
 void CEntity::ClearComponents()
