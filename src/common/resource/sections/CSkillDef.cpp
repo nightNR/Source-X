@@ -201,9 +201,11 @@ bool CSkillDef::r_LoadVal( CScript &s )
             break;
         case SKC_KEY: // "KEY"
             m_sKey = s.GetArgStr();
+            sl::KeyLookupCache::Invalidate();   // The cached skill name lookups could change
             return SetResourceName( m_sKey );
         case SKC_NAME: // "KEY"
             m_sName = s.GetArgStr();
+            sl::KeyLookupCache::Invalidate();
             break;
         case SKC_PROMPT_CLILOC: // "PROMPT_CLILOC"
             m_sTargetPromptCliloc = s.GetArgStr();

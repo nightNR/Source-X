@@ -146,7 +146,7 @@ bool CCharNPC::r_LoadVal( CChar * pChar, CScript &s )
 bool CCharNPC::r_WriteVal( CChar * pChar, lpctstr ptcKey, CSString & sVal )
 {
 	EXC_TRY("WriteVal");
-	switch ( FindTableSorted( ptcKey, sm_szLoadKeys, CNC_QTY ))
+	switch ( FindTableSortedCached( ptcKey, sm_szLoadKeys, CNC_QTY ))
 	{
 
 		//return as string or hex number or nullptr if not set
@@ -203,12 +203,12 @@ bool CCharNPC::r_WriteVal( CChar * pChar, lpctstr ptcKey, CSString & sVal )
 		}
 		break;
 		default:
-			if ( FindTableHeadSorted( ptcKey, CCharPlayer::sm_szLoadKeys, CPC_QTY ) >= 0 )
+			if ( FindTableHeadSortedCached( ptcKey, CCharPlayer::sm_szLoadKeys, CPC_QTY ) >= 0 )
 			{
 				sVal.SetValFalse();
 				return true;
 			}
-			if ( FindTableSorted( ptcKey, CClient::sm_szLoadKeys, CC_QTY ) >= 0 )
+			if ( FindTableSortedCached( ptcKey, CClient::sm_szLoadKeys, CC_QTY ) >= 0 )
 			{
 				sVal.SetValFalse();
 				return true;
