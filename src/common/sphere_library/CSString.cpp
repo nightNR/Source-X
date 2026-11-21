@@ -139,7 +139,8 @@ int CSString::Resize(int iNewLength, bool fPreciseSize)
     }
 
     // Only reallocate if growing beyond capacity or starting from invalid (empty literal).
-    if ((iNewLength >= m_iMaxLength) || !fValid)
+    // The buffer holds m_iMaxLength chars plus the terminator, so a string as long as m_iMaxLength still fits.
+    if ((iNewLength > m_iMaxLength) || !fValid)
 	{
 #ifdef DEBUG_STRINGS
 		gMemAmount -= m_iMaxLength;
