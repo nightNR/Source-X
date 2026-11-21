@@ -368,6 +368,10 @@ CServerConfig::~CServerConfig()
 	}
 
 	Unload(false);
+
+	// The resources are destroyed after this, in no particular order. A resource can still hold references to another one
+	//	(eg: a region to its REGIONTYPE events, a multi to its TSPEECH): they must not touch it, it may be already destroyed.
+	CResourceRef::sm_fDestroyingResources = true;
 }
 
 

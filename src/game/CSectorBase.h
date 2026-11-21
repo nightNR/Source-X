@@ -148,6 +148,7 @@ public:
 
 	bool UnLinkRegion( CRegion * pRegionOld );
 	bool LinkRegion( CRegion * pRegionNew );
+	void UnLinkAllRegions();
 
 	// CTeleport(s) in the region.
 	CTeleport * GetTeleport( const CPointMap & pt ) const;
