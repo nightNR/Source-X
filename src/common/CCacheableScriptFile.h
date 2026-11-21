@@ -11,6 +11,19 @@
 #include "sphere_library/CSFileText.h"
 
 
+// Precomputed parsing of a cached script line, done once when the file is loaded instead of on every read.
+// The offsets are relative to the start of the line, kuiNone means none (or that the line can't use the fast path).
+struct CScriptLineInfo
+{
+    static constexpr ushort kuiNone = 0xFFFF;
+
+    ushort uiLen;       // Length of the line without the comment and the trailing whitespace, 0 if the line is blank.
+    ushort uiKey;       // Start of the key (Str_Parse), kuiNone if the line has to be parsed as usual.
+    ushort uiArg;       // Start of the argument.
+    ushort uiNul;       // Where Str_Parse ends the key with a '\0', kuiNone if it doesn't.
+};
+static_assert(sizeof(CScriptLineInfo) == 8);
+
 class CCacheableScriptFile : public CSFileText
 {
 public:
@@ -41,6 +54,11 @@ protected:
     void _dupeFrom(CCacheableScriptFile *other);
     void dupeFrom(CCacheableScriptFile *other);
 
+    // Reads the next non blank line from the cache, already trimmed as by CScriptKeyAlloc::ParseKeyEnd.
+    // RETURN: 1 = line read, 0 = end of file, -1 = the next line must be read as usual.
+    //  iLinesRead is increased by the lines consumed, blank ones included.
+    int _ReadTrimmedLine(tchar *pBuffer, int& iLinesRead, const CScriptLineInfo*& pInfo);
+
 protected:  bool _HasCache() const;
 public:     bool HasCache() const;
 
@@ -51,8 +69,9 @@ public:
 
 protected:
 	std::vector<std::string>* _fileContent; // It's better to have a pointer so that CResourceLock can access to this
+    std::vector<CScriptLineInfo>* _lineInfo; // One for each line of _fileContent, built by CScript. Owned like _fileContent.
 
-private:    bool _useDefaultFile() const;
+protected:  bool _useDefaultFile() const;
 //public:     bool useDefaultFile() const;
 };
 

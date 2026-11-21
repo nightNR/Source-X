@@ -78,6 +78,23 @@ bool CResourceLock::_ReadTextLine( bool fRemoveBlanks ) // Read a line from the 
     ASSERT( ! _IsBinaryMode() );
 
     tchar* ptcBuf = _GetKeyBufferRaw();
+    m_pLineInfo = nullptr;
+    if ( fRemoveBlanks )
+    {
+        // Fast path: the line was already trimmed when the file was loaded.
+        int iLinesRead = 0;
+        const int iRet = CCacheableScriptFile::_ReadTrimmedLine( ptcBuf, iLinesRead, m_pLineInfo );
+        m_iLineNum += iLinesRead;
+        m_pLock->m_iLineNum = m_iLineNum;	// share this with original open.
+        if ( iRet > 0 )
+            return true;
+        if ( iRet == 0 )
+        {
+            m_pszKey[0] = '\0';
+            return false;
+        }
+    }
+
     while ( CCacheableScriptFile::_ReadString( ptcBuf, sm_TextBufMaxSize ))
     {
         m_pLock->m_iLineNum = ++m_iLineNum;	// share this with original open.
