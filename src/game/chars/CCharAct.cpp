@@ -5714,11 +5714,36 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
 	//
 	if ( (iAction > XTRIG_UNKNOWN) ? IsTrigUsedIndex(trigLookup.iUsedId[iAction], pszTrigName) : IsTrigUsed(pszTrigName) )
 	{
-        std::vector<const CResourceLink*> executedEvents;
-        auto fnShouldSkipLink = [&executedEvents, &iAction](const CResourceLink *pLink) -> bool
+        // Event links already run by this call, so that a link present in more than one list runs only once.
+        // This runs on every trigger fired and chars have only a few events, so keep them on the stack.
+        const CResourceLink* apExecutedEvents[16];
+        size_t uiExecutedEvents = 0;
+        std::vector<const CResourceLink*> vExecutedEventsMore;
+        auto fnAddExecutedEvent = [&](const CResourceLink *pLink)
         {
-            return (!pLink || !pLink->HasTrigger(iAction)
-            || (executedEvents.end() != std::find(executedEvents.begin(), executedEvents.end(), pLink)));
+            if (uiExecutedEvents < ARRAY_COUNT(apExecutedEvents))
+            {
+                apExecutedEvents[uiExecutedEvents++] = pLink;
+            }
+            else
+            {
+                vExecutedEventsMore.emplace_back(pLink);
+            }
+        };
+        auto fnShouldSkipLink = [&](const CResourceLink *pLink) -> bool
+        {
+            if (!pLink || !pLink->HasTrigger(iAction))
+            {
+                return true;
+            }
+            for (size_t i = 0; i < uiExecutedEvents; ++i)
+            {
+                if (apExecutedEvents[i] == pLink)
+                {
+                    return true;
+                }
+            }
+            return (vExecutedEventsMore.end() != std::find(vExecutedEventsMore.begin(), vExecutedEventsMore.end(), pLink));
         };
 
         {
@@ -5733,7 +5758,7 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
 
                 if (!OnTriggerLink(pLink, pszTrigName, pScriptArgs, pSrc, iRet))
                     continue;
-                executedEvents.emplace_back(pLink);
+                fnAddExecutedEvent(pLink);
                 if (iRet != TRIGRET_RET_FALSE && iRet != TRIGRET_RET_DEFAULT)
                     goto stopandret;
 
@@ -5758,7 +5783,7 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
 
 				if (!OnTriggerLink(pLink, pszTrigName, pScriptArgs, pSrc, iRet))
 					continue;
-                executedEvents.emplace_back(pLink);
+                fnAddExecutedEvent(pLink);
 				if ( iRet != TRIGRET_RET_FALSE && iRet != TRIGRET_RET_DEFAULT )
 					goto stopandret;
 			}
@@ -5790,7 +5815,7 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
 
 				if (!OnTriggerLink(pLink, pszTrigName, pScriptArgs, pSrc, iRet))
 					continue;
-                executedEvents.emplace_back(pLink);
+                fnAddExecutedEvent(pLink);
 				if (iRet != TRIGRET_RET_FALSE && iRet != TRIGRET_RET_DEFAULT)
 					goto stopandret;
 			}
@@ -5809,7 +5834,7 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
 
 				if (!OnTriggerLink(pLink, pszTrigName, pScriptArgs, pSrc, iRet))
 					continue;
-                executedEvents.emplace_back(pLink);
+                fnAddExecutedEvent(pLink);
 				if ( iRet != TRIGRET_RET_FALSE && iRet != TRIGRET_RET_DEFAULT )
 					goto stopandret;
 			}
