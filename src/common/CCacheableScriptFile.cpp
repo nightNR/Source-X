@@ -10,6 +10,7 @@
 CCacheableScriptFile::CCacheableScriptFile()
 {
     _fileContent = nullptr;
+    _lineInfo = nullptr;
     _fClosed = true;
     _fRealFile = false;
     _iCurrentLine = 0;
@@ -22,6 +23,11 @@ CCacheableScriptFile::~CCacheableScriptFile()
     {
         delete _fileContent;
         _fileContent = nullptr;
+    }
+    if ( _fRealFile && _lineInfo )
+    {
+        delete _lineInfo;
+        _lineInfo = nullptr;
     }
 }
 
@@ -65,6 +71,11 @@ bool CCacheableScriptFile::_Open(lpctstr ptcFilename, uint uiModeFlags)
     {
         delete _fileContent;
         _fileContent = nullptr;
+    }
+    if (_lineInfo)
+    {
+        delete _lineInfo;
+        _lineInfo = nullptr;
     }
 
     if ((uiModeFlags & OF_WRITE) || (uiModeFlags & OF_READWRITE))
@@ -282,6 +293,36 @@ tchar * CCacheableScriptFile::_ReadString(tchar *pBuffer, int sizemax)
     return pBuffer;
 }
 
+int CCacheableScriptFile::_ReadTrimmedLine(tchar *pBuffer, int& iLinesRead, const CScriptLineInfo*& pInfo)
+{
+    // Called for each script line which is being parsed, keep it cheap.
+    pInfo = nullptr;
+    if ( !_lineInfo || _useDefaultFile() )
+        return -1;
+
+    const size_t uiSize = _fileContent->size();
+    if ( _lineInfo->size() != uiSize )   // the content was changed after the file was loaded
+        return -1;
+    while ( (size_t)_iCurrentLine < uiSize )
+    {
+        const CScriptLineInfo& info = (*_lineInfo)[(size_t)_iCurrentLine];
+        if ( info.uiLen == CScriptLineInfo::kuiNone )
+            return -1;
+
+        const std::string& sLine = (*_fileContent)[(size_t)_iCurrentLine];
+        ++_iCurrentLine;
+        ++iLinesRead;
+        if ( info.uiLen == 0 )
+            continue;
+
+        memcpy(pBuffer, sLine.data(), info.uiLen);
+        pBuffer[info.uiLen] = '\0';
+        pInfo = &info;
+        return 1;
+    }
+    return 0;
+}
+
 tchar * CCacheableScriptFile::ReadString(tchar *pBuffer, int sizemax)
 {
     //ADDTOCALLSTACK_DEBUG("CCacheableScriptFile::ReadString");
@@ -297,6 +338,7 @@ void CCacheableScriptFile::_dupeFrom(CCacheableScriptFile *other)
     _fClosed = other->_fClosed;
     _fRealFile = false;
     _fileContent = other->_fileContent;
+    _lineInfo = other->_lineInfo;
 }
 void CCacheableScriptFile::dupeFrom(CCacheableScriptFile *other)
 {

@@ -126,9 +126,11 @@ private:
 	bool m_fSectionHead;	// Does the File Offset point to current section header? [HEADER]
 protected:
     bool _fCacheToBeUpdated;
+    const CScriptLineInfo* m_pLineInfo; // Precomputed parsing of the line in the key buffer, if it was read through the cache.
 
 protected:
 	void _InitBase();
+    void _BuildLineInfo();
 
 	// text only functions:
     friend class CResourceLock;
