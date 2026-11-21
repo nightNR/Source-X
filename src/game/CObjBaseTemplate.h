@@ -125,9 +125,7 @@ public:
     CSector* GetTopSector() const noexcept; // can return a nullptr!
 
 	// - *Unk* methods: are not virtual and get/set raw values, without any check.
-	void SetUnkPoint(const CPointMap& pt) noexcept {
-		m_pt = pt;
-	}
+	void SetUnkPoint(const CPointMap& pt) noexcept;
     [[nodiscard]]
     inline const CPointMap & GetUnkPoint() const noexcept {
         // don't care where this
