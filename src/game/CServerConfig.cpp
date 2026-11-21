@@ -1606,7 +1606,8 @@ const CSkillDef* CServerConfig::FindSkillDef( lpctstr ptcKey ) const
 {
     // Find the skill name in the alpha sorted list.
     // RETURN: SKILL_NONE = error.
-	const size_t i = m_SkillNameDefs.find_sorted(ptcKey);
+	const size_t i = sl::KeyLookupCache::Find(sl::KeyLookupCache::Kind::Custom, &m_SkillNameDefs, 0, ptcKey,
+		[this, ptcKey]() { return m_SkillNameDefs.find_sorted(ptcKey); });
     if ( i == sl::scont_bad_index() )
         return nullptr;
     return m_SkillNameDefs[i].get();
@@ -3261,6 +3262,7 @@ bool CServerConfig::LoadResourceSection( CScript * pScript, bool fInsertSorted )
 
 	ASSERT(pScript);
 	CScriptFileContext FileContext( pScript );	// set this as the context.
+	sl::KeyLookupCache::Invalidate();	// Loading resources can change the result of the cached lookups (skill and function names...)
     const CSString sSection(pScript->GetSection());
     lpctstr pszSection = sSection.GetBuffer();
 
@@ -3648,6 +3650,7 @@ bool CServerConfig::LoadResourceSection( CScript * pScript, bool fInsertSorted )
 				// build a name sorted list.
 				const auto array_pos_iter = m_SkillNameDefs.emplace(pSkill);
 				const size_t emplaced_idx = array_pos_iter - m_SkillNameDefs.begin();
+				sl::KeyLookupCache::Invalidate();	// FindSkillDef results changed
 
 				// Hard coded value for skill index.
 				uint idx = rid.GetResIndex();
@@ -3979,6 +3982,7 @@ bool CServerConfig::LoadResourceSection( CScript * pScript, bool fInsertSorted )
                 pNewLink->SetLink(pLinkResScript);
 
             m_Functions.emplace(static_cast<CResourceNamedDef*>(pNewLink));
+            sl::KeyLookupCache::Invalidate();   // CScriptObj::r_GetFunctionIndex results changed
         }
         else
         {
@@ -5001,9 +5005,11 @@ void CServerConfig::Unload( bool fResync )
 	m_Runes.ClearFree();	// Words of power. (A-Z)
 	// m_MultiDefs
 	m_SkillNameDefs.clear();	// Defined Skills
+	sl::KeyLookupCache::Invalidate();
 	m_SkillIndexDefs.clear();
 	// m_Servers
 	m_Functions.clear();
+	sl::KeyLookupCache::Invalidate();
 	m_StartDefs.ClearFree(); // Start points list
 	// m_StatAdv
 	for ( int j=0; j<PLEVEL_QTY; ++j )

@@ -424,4 +424,6 @@ bool IsHexNumDigit(int c) noexcept
 }
 
 
+#include "skeylookupcache.h"
+
 #endif // _INC_SSTRING_H
