@@ -26,7 +26,7 @@ void CSObjContRec::RemoveSelf()
 // CSObjCont:: Constructors, Destructor, Assign operator.
 
 CSObjCont::CSObjCont() :
-    _fClearingContainer(false)
+    _fClearingContainer(false), _uiModCount(0)
 {
 }
 
@@ -49,6 +49,7 @@ void CSObjCont::ClearContainer(bool fClosingWorld) noexcept
 	//	other objects are deleted and appended to this list, thus invalidating the iterators used by the for loop.
 	const auto stateCopy = GetIterationSafeContReverse();
 	_Contents.clear();
+    ++_uiModCount;
     _fClearingContainer = true;
 
     EXC_TRY("Deleting objects");
@@ -114,6 +115,7 @@ void CSObjCont::InsertContentTail(CSObjContRec* pNewRec)
     pNewRec->m_pParent = this;
 
     _Contents.emplace_back(pNewRec);
+    ++_uiModCount;
 }
 
 void CSObjCont::OnRemoveObj(CSObjContRec* pObjRec)	// Override this --> called when removed from list.
@@ -143,4 +145,5 @@ void CSObjCont::OnRemoveObj(CSObjContRec* pObjRec)	// Override this --> called w
     */
 
     _Contents.erase(itObjRec);
+    ++_uiModCount;
 }

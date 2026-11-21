@@ -158,32 +158,36 @@ bool CWorldSearch::GetNextSector()
 	}
 }
 
+void CWorldSearch::ReserveObjArray(size_t uiCount)
+{
+    bool fAllocate = false;
+    if (_ppCurContObjs != nullptr)
+    {
+        if (_uiObjArrayCapacity < uiCount)
+        {
+            delete[] _ppCurContObjs;
+            fAllocate = true;
+        }
+    }
+    else
+    {
+        fAllocate = true;
+    }
+
+    if (fAllocate)
+    {
+        _uiObjArrayCapacity = uiCount * kuiContainerScaleFactor;
+        _ppCurContObjs = new CSObjContRec * [_uiObjArrayCapacity];
+    }
+}
+
 void CWorldSearch::LoadSectorObjs(CSObjCont const& pSectorObjList)
 {
     ADDTOCALLSTACK_DEBUG("CWorldSearch::LoadSectorObjs");
     const size_t sector_obj_num = pSectorObjList.size();
     if (0 != sector_obj_num)
     {
-        bool fAllocate = false;
-        if (_ppCurContObjs != nullptr)
-        {
-            if (_uiObjArrayCapacity < sector_obj_num)
-            {
-                delete[] _ppCurContObjs;
-                fAllocate = true;
-            }
-        }
-        else
-        {
-            fAllocate = true;
-        }
-
-        if (fAllocate)
-        {
-            _uiObjArrayCapacity = sector_obj_num * kuiContainerScaleFactor;
-            _ppCurContObjs = new CSObjContRec * [_uiObjArrayCapacity];
-        }
-
+        ReserveObjArray(sector_obj_num);
         memcpy(_ppCurContObjs, pSectorObjList.data(), sector_obj_num * sizeof(CSObjContRec*)); // I need this to be as fast as possible
     }
 
@@ -212,6 +216,30 @@ void CWorldSearch::SetDistanceFunction()
     _fMaxAxisDist = (_fSearchSquare || (g_Cfg.m_iDistanceFormula == DISTANCE_FORMULA_NODIAGONAL_NOZ));
 }
 
+void CWorldSearch::LoadSectorItems()
+{
+    // Only the items in a single tile: use the index of the sector, if it has one.
+    CItemsList& items = _pSector->m_Items;
+    const CItemsList::TileIndexEntry *pFirst, *pLast;
+    if ((_iDist != 0) || !items.FindTileItems(_pt.m_x, _pt.m_y, pFirst, pLast))
+    {
+        LoadSectorObjs(items);
+        return;
+    }
+
+    const size_t uiCount = (size_t)(pLast - pFirst);
+    if (uiCount != 0)
+    {
+        ReserveObjArray(uiCount);
+        for (size_t i = 0; i < uiCount; ++i)
+        {
+            _ppCurContObjs[i] = items.GetContentIndex(pFirst[i].uiIndex);
+        }
+    }
+    _uiObjArraySize = uiCount;
+    _uiCurObjIndex = 0;
+}
+
 CItem* CWorldSearch::GetItem()
 {
 	// This method is called very frequently, ADDTOCALLSTACK unneededly sucks cpu
@@ -224,7 +252,7 @@ CItem* CWorldSearch::GetItem()
 			ASSERT(_eSearchType == ws_search_e::None);
 			_eSearchType = ws_search_e::Items;
 
-            LoadSectorObjs(_pSector->m_Items);
+            LoadSectorItems();
 		}
 		else
 		{

@@ -62,14 +62,39 @@ public:
 class CItemsList : public CSObjCont, public CSectorObjCont
 {
 public:
-	CItemsList() = default;
+    // Index of the items by their x,y position, used to find the items in a single tile without checking every item
+    //  in the sector. Built only when needed, and built again on the first search after the contents changed.
+    struct TileIndexEntry
+    {
+        uint uiKey;     // x << 16 | y
+        uint uiIndex;   // Index in the contents.
+    };
+    static constexpr size_t kuiTileIndexMinItems = 32;  // Smaller lists are checked whole: it's faster.
+
+private:
+    std::vector<TileIndexEntry> _vTileIndex;
+    uint _uiTileIndexModCount;
+    bool _fTileIndexValid;
+
+public:
+	CItemsList() noexcept;
 	CItemsList(const CItemsList& copy) = delete;
 	CItemsList& operator=(const CItemsList& other) = delete;
 
 	void AddItemToSector( CItem * pItem );
 
+    /**
+    * @brief Find the items at the given position (z not checked), in the same order they have in the list.
+    *   The returned entries are valid until the contents (or the position of an item) change.
+    * @return false if the list is too small to have an index: check the whole list instead.
+    */
+    bool FindTileItems(short x, short y, const TileIndexEntry*& pFirst, const TileIndexEntry*& pLast);
+
 protected:
 	void OnRemoveObj(CSObjContRec* pObRec);	// Override this = called when removed from list.
+
+private:
+    void _BuildTileIndex();
 };
 
 

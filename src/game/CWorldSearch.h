@@ -85,6 +85,8 @@ private:
     inline bool IsInRange(const CPointMap& ptObj) const noexcept;
     bool GetNextSector();
     void LoadSectorObjs(CSObjCont const& pSectorObjList);
+    void ReserveObjArray(size_t uiCount);
+    void LoadSectorItems();
 };
 
 // This is called for every object in the searched sectors, so keep it inline and cheap.

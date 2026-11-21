@@ -55,6 +55,7 @@ void CContainer::ContentDelete(bool fForce)
     //	other objects are deleted and appended to this list, thus invalidating the iterators used by the for loop.
     const auto stateCopy = GetIterationSafeContReverse();
     _Contents.clear();
+    ++_uiModCount;
 
 
     for (CSObjContRec* pRec : stateCopy)	// iterate the list.

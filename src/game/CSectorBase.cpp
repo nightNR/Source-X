@@ -76,6 +76,60 @@ void CCharsActiveList::AddCharActive( CChar * pChar )
 //////////////////////////////////////////////////////////////
 // -CItemList
 
+CItemsList::CItemsList() noexcept :
+    _uiTileIndexModCount(0), _fTileIndexValid(false)
+{
+}
+
+static inline uint GetTileIndexKey(short x, short y) noexcept
+{
+    return ((uint)(ushort)x << 16) | (uint)(ushort)y;
+}
+
+void CItemsList::_BuildTileIndex()
+{
+    ADDTOCALLSTACK("CItemsList::_BuildTileIndex");
+    const size_t uiCount = _Contents.size();
+    _vTileIndex.resize(uiCount);
+    for (size_t i = 0; i < uiCount; ++i)
+    {
+        const CPointMap& pt = static_cast<const CItem*>(_Contents[i])->GetTopPoint();
+        _vTileIndex[i] = TileIndexEntry{ GetTileIndexKey(pt.m_x, pt.m_y), (uint)i };
+    }
+    // Stable: items in the same tile keep the order they have in the list.
+    std::stable_sort(_vTileIndex.begin(), _vTileIndex.end(),
+        [](const TileIndexEntry& a, const TileIndexEntry& b) noexcept { return a.uiKey < b.uiKey; });
+
+    _uiTileIndexModCount = GetModCount();
+    _fTileIndexValid = true;
+}
+
+bool CItemsList::FindTileItems(short x, short y, const TileIndexEntry*& pFirst, const TileIndexEntry*& pLast)
+{
+    if (_Contents.size() < kuiTileIndexMinItems)
+    {
+        if (_fTileIndexValid)
+        {
+            // Free the memory, the list got small.
+            _fTileIndexValid = false;
+            std::vector<TileIndexEntry>().swap(_vTileIndex);
+        }
+        return false;
+    }
+
+    if (!_fTileIndexValid || (_uiTileIndexModCount != GetModCount()))
+    {
+        _BuildTileIndex();
+    }
+
+    const uint uiKey = GetTileIndexKey(x, y);
+    const auto range = std::equal_range(_vTileIndex.cbegin(), _vTileIndex.cend(), TileIndexEntry{ uiKey, 0 },
+        [](const TileIndexEntry& a, const TileIndexEntry& b) noexcept { return a.uiKey < b.uiKey; });
+    pFirst = _vTileIndex.data() + (range.first - _vTileIndex.cbegin());
+    pLast = _vTileIndex.data() + (range.second - _vTileIndex.cbegin());
+    return true;
+}
+
 void CItemsList::OnRemoveObj(CSObjContRec* pObjRec)
 {
 	ADDTOCALLSTACK("CItemsList::OnRemoveObj");
