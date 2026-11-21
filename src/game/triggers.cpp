@@ -44,6 +44,11 @@ bool IsTrigUsed(const char *name)
     return true; //Must return true for custom triggers
 }
 
+int TriglistFindIndex(const char *name)
+{
+    return FindTableSorted(name, kOrderedTrigsNames, ARRAY_COUNT(kOrderedTrigsNames));
+}
+
 void TriglistInit()
 {
     TRIGGER_T_ID trig{};
