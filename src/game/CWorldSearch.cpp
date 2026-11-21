@@ -55,7 +55,7 @@ CWorldSearch::CWorldSearch() noexcept :
     _iSectorCur(0),  // Get upper left of search rect.
     _pSectorBase(nullptr), _pSector(nullptr),
     _rectSectorIndexingHints{},
-    _distanceFunction(nullptr)
+    _distanceFunction(nullptr), _fMaxAxisDist(false)
 {
 }
 
@@ -207,6 +207,9 @@ void CWorldSearch::SetDistanceFunction()
         else
             _distanceFunction = &CPointMap::GetDist;
     }
+
+    // GetDistSightBase and GetDistSight always use max(dx, dy), GetDistBase and GetDist do it with the default distance formula.
+    _fMaxAxisDist = (_fSearchSquare || (g_Cfg.m_iDistanceFormula == DISTANCE_FORMULA_NODIAGONAL_NOZ));
 }
 
 CItem* CWorldSearch::GetItem()
@@ -239,7 +242,7 @@ CItem* CWorldSearch::GetItem()
 		}
 
         _pObj = static_cast<CObjBase*>(_ppCurContObjs[_uiCurObjIndex]);
-        if ((_pt.* _distanceFunction)(_pObj->GetTopPoint()) <= _iDist)
+        if (IsInRange(_pObj->GetTopPoint()))
             return static_cast <CItem*> (_pObj);
 	}
 }
@@ -286,7 +289,7 @@ CChar* CWorldSearch::GetChar()
 
 	jumpover:
         _pObj = static_cast<CObjBase*>(_ppCurContObjs[_uiCurObjIndex]);
-        if ((_pt.* _distanceFunction)(_pObj->GetTopPoint()) <= _iDist)
+        if (IsInRange(_pObj->GetTopPoint()))
             return static_cast <CChar*> (_pObj);
 	}
 }
