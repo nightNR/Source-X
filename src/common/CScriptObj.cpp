@@ -16,6 +16,7 @@
 #include "crypto/CMD5.h"
 #include "sphere_library/CSRand.h"
 #include "resource/sections/CResourceNamedDef.h"
+#include "resource/CResourceLink.h"
 #include "resource/CResourceLock.h"
 //#include "CExpression.h" // included in the precompiled header
 //#include "CScriptParserBufs.h" // included in the precompiled header via CExpression.h
@@ -1662,6 +1663,23 @@ TRIGRET_TYPE CScriptObj::OnTriggerScript( CScript & s, lpctstr pszTrigName, CScr
 	if ( !OnTriggerFind(s, pszTrigName) )
 		return TRIGRET_RET_DEFAULT;
 
+    return OnTriggerScriptFound(s, pszTrigName, pScriptArgs, pSrc);
+}
+
+bool CScriptObj::OnTriggerLink( CResourceLink * pLink, lpctstr pszTrigName, CScriptTriggerArgsPtr const& pScriptArgs, CTextConsole * pSrc, TRIGRET_TYPE & iRet )
+{
+	ADDTOCALLSTACK_DEBUG("CScriptObj::OnTriggerLink");
+    CResourceLock s;
+    const int iFound = pLink->ResourceLockTrigger(s, pszTrigName);
+    if ( iFound < 0 )
+        return false;
+    iRet = (iFound > 0) ? OnTriggerScriptFound(s, pszTrigName, pScriptArgs, pSrc) : TRIGRET_RET_DEFAULT;
+    return true;
+}
+
+TRIGRET_TYPE CScriptObj::OnTriggerScriptFound( CScript & s, lpctstr pszTrigName, CScriptTriggerArgsPtr const& pScriptArgs, CTextConsole * pSrc)
+{
+	ADDTOCALLSTACK_DEBUG("CScriptObj::OnTriggerScriptFound");
 	/*
 	This is the same assignement found in the CChar::OnTrigger method (CCharAct.cpp).
 	If pSrc is null (for example the caster is dead when the spell triggers @EffectRemove or @EffectTick are fired) we assign the server object to it.
