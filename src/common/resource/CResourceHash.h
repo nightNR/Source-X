@@ -38,6 +38,8 @@ struct CResourceHash
 {
     static const char *m_sClassName;
     CResourceHashArray m_Array[16];
+    // Bumped on every change of the stored resources, so lookups cached elsewhere can tell when they are stale.
+    uint m_uiModCount = 1;
 
     CResourceHash() = default;
     CResourceHash(const CResourceHash&) = delete;
