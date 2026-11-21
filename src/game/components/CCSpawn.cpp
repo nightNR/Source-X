@@ -38,9 +38,11 @@ void CCSpawn::DelBadSpawn()
 {
     ADDTOCALLSTACK("CCSpawn::DelBadSpawn");
     MT_ENGINE_UNIQUE_LOCK_SET(this);
-    if (!_vBadSpawns.empty())
+    // The destructor calls this for every spawn, also for one that isn't in the list.
+    const auto it = std::find(_vBadSpawns.begin(), _vBadSpawns.end(), this);
+    if (it != _vBadSpawns.end())
     {
-        _vBadSpawns.erase(std::find(_vBadSpawns.begin(), _vBadSpawns.end(), this));
+        _vBadSpawns.erase(it);
     }
     _fIsBadSpawn = false;
 }

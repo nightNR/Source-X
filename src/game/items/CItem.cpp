@@ -276,6 +276,7 @@ CItem::~CItem()
 
 	DeletePrepare();	// Using this in the destructor will fail to call virtuals, but it's better than nothing.
 	CItem::DeleteCleanup(true);
+	ClearComponents();	// Here the item is still whole: the component destructors use it.
 
 	g_Serv.StatDec(SERV_STAT_ITEMS);
 
