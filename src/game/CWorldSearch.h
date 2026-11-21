@@ -83,6 +83,8 @@ private:
 
     bool GetNextSector();
     void LoadSectorObjs(CSObjCont const& pSectorObjList);
+    void ReserveObjArray(size_t uiCount);
+    void LoadSectorItems();
 };
 
 struct CWorldSearchHolder

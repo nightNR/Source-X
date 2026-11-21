@@ -1,4 +1,5 @@
 #include "../sphere/threads.h"
+#include "../common/sphere_library/CSObjCont.h"
 #include "CObjBaseTemplate.h"
 #include "CServerConfig.h"
 
@@ -20,11 +21,24 @@ int CObjBaseTemplate::IsWeird() const
 	return 0;
 }
 
+// The container can index its elements by position (see CItemsList): tell it when the x,y position changes.
+static inline void NotifyContainerPosChange(const CSObjContRec *pRec, const CPointMap &ptOld, short x, short y) noexcept
+{
+    if ((ptOld.m_x != x) || (ptOld.m_y != y))
+    {
+        if (CSObjCont *pParent = pRec->GetParent())
+        {
+            pParent->OnContentPosChanged();
+        }
+    }
+}
+
 void CObjBaseTemplate::DupeCopy( const CObjBaseTemplate * pObj )
 {
 	// NOTE: Never copy m_UID
 	ASSERT(pObj);
 	m_sName = pObj->m_sName;
+    NotifyContainerPosChange(this, m_pt, pObj->m_pt.m_x, pObj->m_pt.m_y);
 	m_pt = pObj->m_pt;
 }
 
@@ -50,6 +64,7 @@ CSector * CObjBaseTemplate::GetTopSector() const noexcept
 void CObjBaseTemplate::SetEquipLayer( LAYER_TYPE layer )
 {
 	SetUIDContainerFlags( UID_O_EQUIPPED );
+    NotifyContainerPosChange(this, m_pt, 0, 0);
 	m_pt.m_x = 0;	// these don't apply.
 	m_pt.m_y = 0;
 	// future: strongly typed enums will remove the need for this cast
@@ -66,6 +81,7 @@ void CObjBaseTemplate::SetContainedLayer( byte layer ) noexcept
 void CObjBaseTemplate::SetContainedPoint( const CPointMap & pt ) noexcept
 {
     SetUIDContainerFlags(UID_O_CONTAINED);
+    NotifyContainerPosChange(this, m_pt, pt.m_x, pt.m_y);
 	m_pt.m_x = pt.m_x;
 	m_pt.m_y = pt.m_y;
 	m_pt.m_z = LAYER_NONE;
@@ -76,6 +92,13 @@ void CObjBaseTemplate::SetTopPoint( const CPointMap & pt )
 {
     SetUIDContainerFlags(UID_PLAIN_CLEAR);
 	ASSERT(pt.IsValidPoint());	// already checked before.
+    NotifyContainerPosChange(this, m_pt, pt.m_x, pt.m_y);
+	m_pt = pt;
+}
+
+void CObjBaseTemplate::SetUnkPoint( const CPointMap & pt ) noexcept
+{
+    NotifyContainerPosChange(this, m_pt, pt.m_x, pt.m_y);
 	m_pt = pt;
 }
 
