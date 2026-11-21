@@ -116,7 +116,7 @@ bool CBaseBaseDef::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * p
 	EXC_TRY("WriteVal");
 
 	bool fZero = false;
-	int index = FindTableHeadSorted( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 );
+	int index = FindTableHeadSortedCached( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 );
 	switch ( index )
 	{
 		//return as string or hex number or nullptr if not set

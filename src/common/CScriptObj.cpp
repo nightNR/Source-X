@@ -124,7 +124,7 @@ bool CScriptObj::r_GetRef( lpctstr & ptcKey, CScriptObj * & pRef )
 	ADDTOCALLSTACK("CScriptObj::r_GetRef");
 	// A key name that just links to another object.
 
-    int index = FindTableHeadSorted(ptcKey, _ptcSRefKeys, ARRAY_COUNT(_ptcSRefKeys)-1);
+    int index = FindTableHeadSortedCached(ptcKey, _ptcSRefKeys, ARRAY_COUNT(_ptcSRefKeys)-1);
     switch (index)
     {
         case SREF_SERV:
@@ -209,7 +209,8 @@ size_t CScriptObj::r_GetFunctionIndex(lpctstr pszFunction) // static
 {
     ADDTOCALLSTACK_DEBUG("CScriptObj::r_GetFunctionIndex");
     GETNONWHITESPACE( pszFunction );
-    return g_Cfg.m_Functions.find_sorted(pszFunction);
+    return sl::KeyLookupCache::Find(sl::KeyLookupCache::Kind::Custom, &g_Cfg.m_Functions, 0, pszFunction,
+        [pszFunction]() { return g_Cfg.m_Functions.find_sorted(pszFunction); });
 }
 
 bool CScriptObj::r_CanCall(size_t uiFunctionIndex) // static
@@ -537,7 +538,7 @@ bool CScriptObj::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc
     }
 
 	EXC_SET_BLOCK("Writeval-Statement");
-	int index = FindTableHeadSorted( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 );
+	int index = FindTableHeadSortedCached( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 );
 	if ( index < 0 )
 	{
 		// <dSOMEVAL> same as <eval <SOMEVAL>> to get dec from the val

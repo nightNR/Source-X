@@ -161,7 +161,7 @@ bool CEntityProps::CEPLoopWrite(CEPLoopRet_t* pRet, lpctstr ptcKey, CSString& sV
         if (CComponentProps* pComponent = pairElem.second.get())
         {
             const KeyTableDesc_s ktd = pComponent->GetPropertyKeysData();
-            pRet->iPropIndex = (COMPPROPS_TYPE)FindTableSorted(ptcKey, ktd.pptcTable, ktd.iTableSize - 1);
+            pRet->iPropIndex = (COMPPROPS_TYPE)FindTableSortedCached(ptcKey, ktd.pptcTable, ktd.iTableSize - 1);
             if (pRet->iPropIndex == (CComponentProps::PropertyIndex_t) - 1)
             {
                 // The key doesn't belong to this CComponentProps.

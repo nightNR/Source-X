@@ -173,7 +173,7 @@ bool CCharBase::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSrc
     }
 
     EXC_SET_BLOCK("Keyword");
-	switch ( FindTableSorted( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 ))
+	switch ( FindTableSortedCached( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 ))
 	{
 		//return as string or hex number or nullptr if not set
 		case CBC_THROWDAM:
