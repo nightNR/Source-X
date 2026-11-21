@@ -1534,21 +1534,31 @@ height_t CChar::GetHeight() const
 	if ( tmpHeight ) //set by a chardef variable ([CHARDEF 10]  Height=10)
 		return tmpHeight;
 
-    // This is SLOW (since this method is called very frequently)! Move those defs value to CharDef!
+    // The DEF lookups are slow and this method is called very often: their result is cached in the char def,
+    // until the DEFs change (scripts loaded or resynced) or the char def gets another dispid.
     auto gReader = g_ExprGlobals.mtEngineLockedReader();
     const uint uiDispID = (uint)pCharDef->GetDispID();
+    const uint uiDefsGen = gReader->m_uiVarDefsGen;
+    if ( pCharDef->GetDefHeightCache(uiDefsGen, uiDispID, &tmpHeight) )
+    {
+        return tmpHeight;
+    }
+
     char heightDef[20]{"height_"};
     Str_FromUI(uint(uiDispID), heightDef + 7, sizeof(heightDef) - 7, 16);
-    tmpHeight = (height_t)(gReader->m_VarDefs.GetKeyNum(heightDef));
-	if ( tmpHeight ) //set by a defname ([DEFNAME charheight]  height_0a)
-		return tmpHeight;
+    tmpHeight = (height_t)(gReader->m_VarDefs.GetKeyNum(heightDef)); //set by a defname ([DEFNAME charheight]  height_0a)
+    if ( !tmpHeight )
+    {
+        Str_FromUI(uint(uiDispID), heightDef + 7, sizeof(heightDef) - 7, 10);
+        tmpHeight = (height_t)(gReader->m_VarDefs.GetKeyNum(heightDef)); //set by a defname ([DEFNAME charheight]  height_10)
+    }
+    if ( !tmpHeight )
+    {
+        tmpHeight = PLAYER_HEIGHT; //if everything fails
+    }
 
-	Str_FromUI(uint(uiDispID), heightDef + 7, sizeof(heightDef) - 7, 10);
-    tmpHeight = (height_t)(gReader->m_VarDefs.GetKeyNum(heightDef));
-	if ( tmpHeight ) //set by a defname ([DEFNAME charheight]  height_10)
-		return tmpHeight;
-
-	return PLAYER_HEIGHT; //if everything fails
+    pCharDef->SetDefHeightCache(uiDefsGen, uiDispID, tmpHeight);
+    return tmpHeight;
 }
 
 CREID_TYPE CChar::GetID() const

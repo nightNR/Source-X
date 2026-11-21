@@ -148,6 +148,7 @@ struct CExprGlobals
 
     CVarDefMap		m_VarResDefs;		// Defined variables in sorted order (RESDEF/RESDEF0).
     CVarDefMap		m_VarDefs;			// Defined variables in sorted order (DEF/DEF0).
+    uint            m_uiVarDefsGen = 0;  // Incremented every time m_VarDefs changes, for the caches of values read from it.
     CVarDefMap		m_VarGlobals;		// Global variables (VAR/VAR0)
     CListDefMap		m_ListGlobals;		// Global lists
     CListDefMap		m_ListInternals;     // Internal lists
