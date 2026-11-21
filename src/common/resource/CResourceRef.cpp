@@ -8,6 +8,8 @@
 #include "../CScript.h"
 #include "CResourceRef.h"
 
+bool CResourceRef::sm_fDestroyingResources = false;
+
 CResourceRef::CResourceRef()
 {
     m_pLink = nullptr;
@@ -30,8 +32,10 @@ CResourceRef::~CResourceRef()
 {
     // TODO: Consider using not a bare pointer for m_pLink but a CResourceID, in order to safely check if the father
     //  resource was deleted or not.
-    if (m_pLink != nullptr)
+    if ((m_pLink != nullptr) && !sm_fDestroyingResources)
+    {
         m_pLink->DelRefInstance();
+    }
 }
 
 

@@ -23,6 +23,9 @@ private:
 public:
     static const char *m_sClassName;
 
+    // Set at shutdown, when the resources are destroyed in no particular order: the linked resource may be already gone.
+    static bool sm_fDestroyingResources;
+
     CResourceRef();
     CResourceRef(CResourceLink* pLink);
     CResourceRef(const CResourceRef& copy);

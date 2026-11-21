@@ -391,6 +391,17 @@ bool CSectorBase::UnLinkRegion( CRegion * pRegionOld )
     return true;
 }
 
+void CSectorBase::UnLinkAllRegions()
+{
+	ADDTOCALLSTACK("CSectorBase::UnLinkAllRegions");
+	// The sector is going to be destroyed: its regions must not look for it anymore.
+	for (CRegion* pRegion : m_RegionLinks)
+	{
+		--pRegion->m_iLinkedSectors;
+	}
+	m_RegionLinks.clear();
+}
+
 bool CSectorBase::LinkRegion( CRegion * pRegionNew )
 {
 	ADDTOCALLSTACK("CSectorBase::LinkRegion");

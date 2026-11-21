@@ -11,6 +11,21 @@ CSectorList::CSectorList() :
 CSectorList::~CSectorList()
 {
 	Close(true);
+
+	// The regions defined in the scripts are destroyed after the world (g_Cfg is destroyed after g_World).
+	// Unlink them while the sectors still exist, so that ~CRegion doesn't look for the destroyed sectors.
+	for (MapSectorsData& sd : _SectorData)
+	{
+		if (!sd._pSectors)
+		{
+			continue;
+		}
+
+		for (int iSector = 0; iSector < sd.iSectorQty; ++iSector)
+		{
+			sd._pSectors[iSector].UnLinkAllRegions();
+		}
+	}
 }
 
 const CSectorList& CSectorList::Get() noexcept // static

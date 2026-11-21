@@ -48,6 +48,12 @@ void CRegion::UnRealizeRegion()
 	// remove myself from the world.
 	// used in the case of a ship where the region will move.
 
+	// Not linked to any sector: nothing to remove. Check it before GetSectorAtIndex, which reads the world's sectors:
+	//	the regions defined in the scripts are destroyed after the world, when its sectors don't exist anymore (they were unlinked by ~CSectorList).
+	DEBUG_ASSERT(m_iLinkedSectors >= 0);
+	if ( m_iLinkedSectors <= 0 )
+		return;
+
 	for ( int i = 0; ; ++i )
 	{
 		CSector * pSector = GetSectorAtIndex(i);
