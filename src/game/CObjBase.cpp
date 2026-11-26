@@ -102,6 +102,7 @@ CObjBase::CObjBase( bool fItem ) :
 
 	_iCreatedResScriptIdx	= _iCreatedResScriptLine	= -1;
     _iRunningTriggerId		= _iCallingObjTriggerId		= -1;
+    _uiRunningTriggerDepth = 0;
 
     _fIsInStatusUpdatesList = false;
     _fIsInStatusUpdatesAddList = false;

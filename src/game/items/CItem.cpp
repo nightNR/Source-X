@@ -3781,6 +3781,8 @@ TRIGRET_TYPE CItem::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
     CItemBase * pItemDef = Item_GetDef();
     ASSERT(pItemDef);
 
+    // Restores the trigger running before this one (if this one is fired from inside it) when this call ends.
+    const CRunningTriggerRestore runningTriggerRestore(*this);
     SetTriggerActive( pszTrigName );
     const ITRIG_TYPE iAction = (ITRIG_TYPE)_iRunningTriggerId;
     // Is there trigger code in the script file ?
@@ -3928,7 +3930,6 @@ from_itemdef_first:
 	}
 
 stopandret:
-    SetTriggerActive(nullptr);
     return iRet;
 	EXC_CATCH;
 
