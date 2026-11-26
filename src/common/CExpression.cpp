@@ -626,8 +626,49 @@ int Calc_GetSCurve( int iValDiff, int iVariance )
 
 CExpression::CExpression() noexcept :
     _pBufs(std::make_unique<PrvBuffersPool>()),
-    _iGetVal_Reentrant(0)
+    _iGetVal_Reentrant(0),
+    _iGetSingle_Reentrant(0),
+    _iGetRangeNumber_Reentrant(0)
 {
+}
+
+namespace
+{
+    // Max nesting levels of the recursive parts of the parser, to stop the expressions which would overflow the stack
+    //  (they can contain text written by a player).
+    //  GetVal: parentheses, operators, and script functions called from an expression (<f_x> calling another one, ...).
+    //  GetSingle: every recursive path of the parser goes through it, also the ones which don't go through GetVal.
+    //  GetRangeNumber: {} ranges, every level uses a few KB of stack.
+    constexpr int kiGetValMaxDepth = 128;
+    constexpr int kiGetSingleMaxDepth = 256;
+    constexpr int kiGetRangeNumberMaxDepth = 32;
+
+    // Enters one nesting level, if the limit isn't reached yet, and leaves it when destroyed
+    //  (also when an exception leaves the function: a manual decrement would be skipped, and the counter would stay high).
+    class CExprDepthGuard
+    {
+        int& _riDepth;
+        const bool _fEntered;
+    public:
+        CExprDepthGuard(int& riDepth, int iMaxDepth) noexcept :
+            _riDepth(riDepth), _fEntered(riDepth < iMaxDepth)
+        {
+            if (_fEntered)
+                ++_riDepth;
+        }
+        ~CExprDepthGuard() noexcept
+        {
+            if (_fEntered)
+                --_riDepth;
+        }
+        CExprDepthGuard(const CExprDepthGuard&) = delete;
+        CExprDepthGuard& operator=(const CExprDepthGuard&) = delete;
+
+        bool IsTooDeep() const noexcept
+        {
+            return !_fEntered;
+        }
+    };
 }
 
 CExpression& CExpression::GetExprParser() // static
@@ -649,8 +690,15 @@ int64 CExpression::GetSingle(lpctstr & refStrExpr)
     ASSERT(refStrExpr);
     GETNONWHITESPACE(refStrExpr);
 
-    tchar ptcOrigExpr[SCRIPT_MAX_LINE_LEN];
-    Str_CopyLimitNull(ptcOrigExpr, refStrExpr, sizeof(ptcOrigExpr));
+    const CExprDepthGuard depthGuard(_iGetSingle_Reentrant, kiGetSingleMaxDepth);
+    if (depthGuard.IsTooDeep())
+    {
+        g_Log.EventError("Expression nested too deeply while parsing '%.64s'. Fix the error in your scripts.\n", refStrExpr);
+        return 0;
+    }
+
+    // Only used for error messages: no copy (it was a 4 KB stack array on every call).
+    lpctstr const ptcOrigExpr = refStrExpr;
 
     // Differences between GetSingle and cstr_to_num (sstring.cpp) in parsing numbers:
     //  - The first "consumes" the string (advances the pointer) as it is parsed.
@@ -660,6 +708,64 @@ int64 CExpression::GetSingle(lpctstr & refStrExpr)
     // Legacy: allow/skip a leading '.' before parsing numbers
     if (refStrExpr[0] == '.')
         ++refStrExpr;
+
+    if ((refStrExpr[0] == '-') || (refStrExpr[0] == '~') || (refStrExpr[0] == '!'))
+    {
+        // Unary operators: read the whole chain, parse the operand, then apply them from the innermost one.
+        //  A recursive call for each operator overflowed the stack with long chains (like <EVAL ----...1>).
+        lpctstr const ptcOpsStart = refStrExpr;
+        for (;;)
+        {
+            if ((refStrExpr[0] == '-') || (refStrExpr[0] == '~'))
+            {
+                ++refStrExpr;
+            }
+            else if (refStrExpr[0] == '!')
+            {
+                ++refStrExpr;
+                if (refStrExpr[0] == '=')   // odd condition such as (!=x) which is always true of course.
+                {
+                    ++refStrExpr;           // so just skip it. and compare it to 0
+                }
+            }
+            else
+            {
+                break;
+            }
+            GETNONWHITESPACE(refStrExpr);
+            // Legacy: the operand of an operator can start with a '.' too (like "-.-5").
+            if ((refStrExpr[0] == '.') && ((refStrExpr[1] == '-') || (refStrExpr[1] == '~') || (refStrExpr[1] == '!')))
+            {
+                ++refStrExpr;
+            }
+        }
+        lpctstr const ptcOpsEnd = refStrExpr;
+
+        // The operand doesn't start with a unary operator: no further recursion here.
+        int64 iVal = GetSingle(refStrExpr);
+        for (lpctstr ptcOp = ptcOpsEnd; ptcOp != ptcOpsStart; )
+        {
+            --ptcOp;
+            switch (*ptcOp)
+            {
+                case '-':
+                    iVal = -iVal;
+                    break;
+                case '~':   // Bitwise not.
+                    iVal = ~iVal;
+                    break;
+                case '!':   // boolean not.
+                    iVal = !iVal;
+                    break;
+                case '=':   // "!=": the value is kept as it is.
+                    --ptcOp;
+                    break;
+                default:    // whitespace or '.' between the operators
+                    break;
+            }
+        }
+        return iVal;
+    }
 
     if (refStrExpr[0] == '0' && refStrExpr[1] != '.')
     {
@@ -797,20 +903,7 @@ int64 CExpression::GetSingle(lpctstr & refStrExpr)
 		case '+':
             ++refStrExpr;
 			break;
-        case '-':
-            ++refStrExpr;
-            return -GetSingle( refStrExpr );
-		case '~':	// Bitwise not.
-            ++refStrExpr;
-            return ~GetSingle( refStrExpr );
-		case '!':	// boolean not.
-            ++refStrExpr;
-            if ( refStrExpr[0] == '=' )  // odd condition such as (!=x) which is always true of course.
-			{
-                ++refStrExpr;		// so just skip it. and compare it to 0
-                return GetSingle( refStrExpr );
-			}
-            return !GetSingle( refStrExpr );
+        // '-', '~' and '!' (unary operators) are handled at the start of the function.
 		case ';':	// seperate field.
 		case ',':	// seperate field.
 		case '\0':
@@ -1453,22 +1546,18 @@ int64 CExpression::GetVal(lpctstr & refStrExpr )
     if ( refStrExpr == nullptr )
 		return 0;
 
-	if (_iGetVal_Reentrant >= 128 )
+	const CExprDepthGuard depthGuard(_iGetVal_Reentrant, kiGetValMaxDepth);
+	if (depthGuard.IsTooDeep())
 	{
-        g_Log.EventError( "Deadlock detected while parsing '%s'. Fix the error in your scripts.\n", refStrExpr );
+        g_Log.EventError( "Deadlock detected while parsing '%.64s'. Fix the error in your scripts.\n", refStrExpr );
 		return 0;
 	}
-
-	++_iGetVal_Reentrant;
 
 	// Get the first operand value: it may be a number or an expression
     int64 iVal = GetSingle(refStrExpr);
 
 	// Check if there is an operator (mathematical or logical), in that case apply it to the second operand (which we evaluate again with GetSingle).
     iVal = GetValMath(iVal, refStrExpr);
-
-	--_iGetVal_Reentrant;
-
     return iVal;
 }
 
@@ -1958,6 +2047,13 @@ end_w_error:
 int64 CExpression::GetRangeNumber(lpctstr & refStrExpr)
 {
 	ADDTOCALLSTACK("CExpression::GetRangeNumber");
+
+    const CExprDepthGuard depthGuard(_iGetRangeNumber_Reentrant, kiGetRangeNumberMaxDepth);
+    if (depthGuard.IsTooDeep())
+    {
+        g_Log.EventError("Ranges nested too deeply while parsing '%.64s'. Fix the error in your scripts.\n", refStrExpr);
+        return 0;
+    }
 
 	// Parse the arguments in the range and get the start and end position of every of them.
 	// When parsing and resolving the value of each argument, we create a substring for the argument
