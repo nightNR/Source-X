@@ -43,6 +43,10 @@ class CServerStaticsBlock
 {
 	uint m_iStatics;
 	CUOStaticItemRec * m_pStatics;	// dyn alloc array block.
+	// Index of the statics by their position in the block: the first (UO_BLOCK_SIZE*UO_BLOCK_SIZE)+1 entries are the start
+	//  of each tile in the rest of the array, which holds the indices of the statics of each tile, in their original order.
+	//  nullptr if there are no statics (or too many to index them with a word: check them all, then).
+	word * m_pwPointIndex;
 
 public:
 	static const char *m_sClassName;
@@ -62,6 +66,24 @@ public:
 	}
     const CUOStaticItemRec * GetStatic( uint i ) const;
     bool IsStaticPoint( uint i, int xo, int yo ) const;
+
+    /**
+    * @brief Get the indices of the statics at the given offset in the block, in the same order they have in the block.
+    * @return false if the block has no index: check all the statics with IsStaticPoint, then.
+    */
+    inline bool GetPointStatics( int xo, int yo, const word *& pFirst, const word *& pLast ) const noexcept
+    {
+        if (m_pwPointIndex == nullptr)
+            return false;
+        const word * pwTile = m_pwPointIndex + (yo * UO_BLOCK_SIZE) + xo;
+        const word * pwIndices = m_pwPointIndex + (UO_BLOCK_SIZE * UO_BLOCK_SIZE) + 1;
+        pFirst = pwIndices + pwTile[0];
+        pLast = pwIndices + pwTile[1];
+        return true;
+    }
+
+private:
+    void BuildPointIndex();
 };
 
 struct CServerMapBlocker

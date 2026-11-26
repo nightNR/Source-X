@@ -1290,10 +1290,15 @@ void CWorldMap::GetHeightPoint(const CPointMap & pt, CServerMapBlockingState & b
 	{
 		x2 = pMapBlock->GetOffsetX(pt.m_x);
 		y2 = pMapBlock->GetOffsetY(pt.m_y);
+		// Use the index of the statics of each tile, if the block has it.
+		const word * pwFirst = nullptr, * pwLast = nullptr;
+		const bool fIndexed = pMapBlock->m_Statics.GetPointStatics(x2, y2, pwFirst, pwLast);
+		const uint iLoopQty = fIndexed ? (uint)(pwLast - pwFirst) : iQty;
 		const CUOStaticItemRec * pStatic = nullptr;
-		for ( uint i = 0; i < iQty; ++i, z = 0, zHeight = 0, pStatic = nullptr, pDupeDef = nullptr )
+		for ( uint k = 0; k < iLoopQty; ++k, z = 0, zHeight = 0, pStatic = nullptr, pDupeDef = nullptr )
 		{
-			if ( ! pMapBlock->m_Statics.IsStaticPoint( i, x2, y2 ))
+			const uint i = fIndexed ? pwFirst[k] : k;
+			if ( !fIndexed && ! pMapBlock->m_Statics.IsStaticPoint( i, x2, y2 ))
 				continue;
 
 			pStatic = pMapBlock->m_Statics.GetStatic( i );
@@ -1646,9 +1651,14 @@ void CWorldMap::GetHeightPoint2( const CPointMap & pt, CServerMapBlockingState &
 	{
 		int x2 = pMapBlock->GetOffsetX(pt.m_x);
 		int y2 = pMapBlock->GetOffsetY(pt.m_y);
-		for ( uint i = 0; i < iStaticQty; ++i )
+		// Use the index of the statics of each tile, if the block has it.
+		const word * pwFirst = nullptr, * pwLast = nullptr;
+		const bool fIndexed = pMapBlock->m_Statics.GetPointStatics(x2, y2, pwFirst, pwLast);
+		const uint iLoopQty = fIndexed ? (uint)(pwLast - pwFirst) : iStaticQty;
+		for ( uint k = 0; k < iLoopQty; ++k )
 		{
-			if ( ! pMapBlock->m_Statics.IsStaticPoint( i, x2, y2 ))
+			const uint i = fIndexed ? pwFirst[k] : k;
+			if ( !fIndexed && ! pMapBlock->m_Statics.IsStaticPoint( i, x2, y2 ))
 				continue;
 			const CUOStaticItemRec * pStatic = pMapBlock->m_Statics.GetStatic( i );
 
@@ -1711,12 +1721,17 @@ void CWorldMap::GetHeightPoint2( const CPointMap & pt, CServerMapBlockingState &
 	{
 	    // Any dynamic items here ?
 	    // NOTE: This could just be an item that an NPC could just move ?
-	    auto Area = CWorldSearchHolder::GetInstance( pt );
-	    for (;;)
+	    // Check the items of the sector directly (using its index of the items of each tile, if it has one): it's what
+	    //  a world search at distance 0 does, with the same order and the same distance check, but without its setup.
+	    CItemsList & sectorItems = pt.GetSector()->m_Items;
+	    const CItemsList::TileIndexEntry * pFirst = nullptr, * pLast = nullptr;
+	    const bool fIndexed = sectorItems.FindTileItems(pt.m_x, pt.m_y, pFirst, pLast);
+	    const size_t uiItemQty = fIndexed ? (size_t)(pLast - pFirst) : sectorItems.GetContentCount();
+	    for (size_t k = 0; k < uiItemQty; ++k)
 	    {
-		    const CItem * pItem = Area->GetItem();
-		    if ( pItem == nullptr )
-			    break;
+		    const CItem * pItem = static_cast<const CItem *>(sectorItems.GetContentIndex(fIndexed ? pFirst[k].uiIndex : k));
+		    if ( pt.GetDist(pItem->GetTopPoint()) > 0 )
+			    continue;
 
 		    char zitem = pItem->GetTopZ();
 
