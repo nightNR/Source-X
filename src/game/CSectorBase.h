@@ -34,12 +34,31 @@ public:
 
 class CCharsActiveList : public CSObjCont, public CSectorObjCont
 {
+public:
+    // Index of the chars by their x,y position, used to find the chars in a single tile without checking every char
+    //  in the sector. Built only when needed, then kept updated when a char is added, removed or moves (chars move
+    //  all the time, rebuilding it would cost more than checking the whole list). Any other change of the list
+    //  (seen through the modification counter of CSObjCont) makes it build again on the next search.
+    struct TileIndexEntry
+    {
+        uint uiKey;     // x << 16 | y
+        uint uiSeq;     // Increases with the position in the list: the entries of a tile are in the order of the list.
+        CSObjContRec* pChar;
+    };
+    static constexpr size_t kuiTileIndexMinChars = 32;  // Smaller lists are checked whole: it's faster.
+
 private:
 	int m_iClients;				// How many clients in this sector now?
 	int64 m_iTimeLastClient;	// age the sector based on last client here.
 
+    std::vector<TileIndexEntry> _vTileIndex;  // Sorted by key, then seq.
+    uint _uiTileIndexModCount;  // Modification counter of the list the index is up to date with.
+    uint _uiTileIndexNextSeq;
+    bool _fTileIndexValid;
+
 protected:
 	void OnRemoveObj(CSObjContRec* pObjRec);	// Override this = called when removed from list.
+    virtual void OnTrackedContentPosChanged(const CSObjContRec* pRec, short iOldX, short iOldY, short iNewX, short iNewY) noexcept override;
 
 public:
 	CCharsActiveList();
@@ -57,6 +76,19 @@ public:
 	void SetTimeLastClient(int64 iTime) noexcept {
 		m_iTimeLastClient = iTime;
 	}
+
+    /**
+    * @brief Find the chars at the given position (z and map not checked), in the same order they have in the list.
+    *   The returned entries are valid until the contents (or the position of a char) change.
+    * @return false if the list is too small to have an index: check the whole list instead.
+    */
+    bool FindTileChars(short x, short y, const TileIndexEntry*& pFirst, const TileIndexEntry*& pLast);
+
+private:
+    void _BuildTileIndex();
+    bool _TileIndexCanUpdate() noexcept;
+    void _TileIndexUpdated() noexcept;
+    TileIndexEntry* _TileIndexFind(const CSObjContRec* pChar, short x, short y) noexcept;
 };
 
 class CItemsList : public CSObjCont, public CSectorObjCont

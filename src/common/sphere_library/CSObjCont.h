@@ -49,6 +49,7 @@ class CSObjCont
 protected:
     BASECONT _Contents;
     bool _fClearingContainer;
+    bool _fTrackContentPos; // Call OnTrackedContentPosChanged when an element changes its x,y position.
     uint _uiModCount;   // Changes every time the contents, or the position of one of them, change.
 
 public:
@@ -106,7 +107,14 @@ public:
     *   Lets a derived class know if data computed from the contents is still valid.
     */
     inline uint GetModCount() const noexcept                { return _uiModCount; }
-    inline void OnContentPosChanged() noexcept              { ++_uiModCount; }
+    inline void OnContentPosChanged(const CSObjContRec* pRec, short iOldX, short iOldY, short iNewX, short iNewY) noexcept
+    {
+        ++_uiModCount;
+        if (_fTrackContentPos)
+        {
+            OnTrackedContentPosChanged(pRec, iOldX, iOldY, iNewX, iNewY);
+        }
+    }
 
     /**
     * @brief Returns a copy of the CSObjCont base container, which is safe to iterate on even if one of its elements is ::Delete'd.
@@ -205,6 +213,14 @@ protected:
     * @param pObjRec removed record.
     */
     virtual void OnRemoveObj( CSObjContRec* pObjRec );
+
+    /**
+    * @brief Called (only if _fTrackContentPos is set) when an element changes its x,y position, after the counter was changed.
+    */
+    virtual void OnTrackedContentPosChanged(const CSObjContRec* pRec, short iOldX, short iOldY, short iNewX, short iNewY) noexcept
+    {
+        (void)pRec; (void)iOldX; (void)iOldY; (void)iNewX; (void)iNewY;
+    }
     ///@}
 };
 

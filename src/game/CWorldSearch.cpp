@@ -4,6 +4,7 @@
 #include "../game/items/CItem.h"
 #include "CSector.h"
 #include "CWorldSearch.h"
+#include <algorithm>
 #include <array>
 
 static constexpr size_t kuiContainerScaleFactor = 2;
@@ -52,6 +53,7 @@ CWorldSearch::CWorldSearch() noexcept :
     _fInertToggle(false), _eSearchType(ws_search_e::None),
     _ppCurContObjs(nullptr), _pObj(nullptr),
     _uiCurObjIndex(0), _uiObjArrayCapacity(0), _uiObjArraySize(0),
+    _uiTileCharIndex(0), _pTileCharsList(nullptr), _uiTileCharsModCount(0), _fTileChars(false),
     _iSectorCur(0),  // Get upper left of search rect.
     _pSectorBase(nullptr), _pSector(nullptr),
     _rectSectorIndexingHints{},
@@ -84,6 +86,7 @@ void CWorldSearch::Reset(const CPointMap& pt, int iDist)
     _eSearchType = ws_search_e::None;
     _pObj = nullptr;
     _uiCurObjIndex = _uiObjArraySize = 0;
+    _fTileChars = false;
     //_uiObjArrayCapacity = 0;   // Don't! Recycle the allocated space for _ppCurContObjs.
     _iSectorCur = 0; // Get upper left of search rect.
 
@@ -129,6 +132,7 @@ void CWorldSearch::RestartSearch()
 	_eSearchType = ws_search_e::None;
 	_pObj = nullptr;
     _uiCurObjIndex = _uiObjArraySize = 0;
+    _fTileChars = false;
     _pSector = _pSectorBase;
     // We could memset 0 _ppCurContObjs, but it isn't actually necessary...
 }
@@ -153,6 +157,7 @@ bool CWorldSearch::GetNextSector()
 		_eSearchType = ws_search_e::None;
 		_pObj = nullptr;	// start at head of next Sector.
         _uiCurObjIndex = _uiObjArraySize = 0;
+        _fTileChars = false;
 
 		return true;
 	}
@@ -240,6 +245,32 @@ void CWorldSearch::LoadSectorItems()
     _uiCurObjIndex = 0;
 }
 
+void CWorldSearch::LoadSectorChars()
+{
+    CCharsActiveList& chars = _pSector->m_Chars_Active;
+    LoadSectorObjs(chars);
+    _fTileChars = false;
+
+    // Only the chars in a single tile: use the index of the sector, if it has one.
+    // The whole list is copied anyway: if it changes while we are returning the chars, we go on like without the index,
+    //  checking every char in the copy after the current one.
+    const CCharsActiveList::TileIndexEntry *pFirst, *pLast;
+    if ((_iDist != 0) || (_uiObjArraySize == 0) || !chars.FindTileChars(_pt.m_x, _pt.m_y, pFirst, pLast))
+    {
+        return;
+    }
+
+    _vTileChars.clear();
+    for (const CCharsActiveList::TileIndexEntry* pEntry = pFirst; pEntry != pLast; ++pEntry)
+    {
+        _vTileChars.emplace_back(pEntry->pChar);
+    }
+    _uiTileCharIndex = 0;
+    _pTileCharsList = &chars;
+    _uiTileCharsModCount = chars.GetModCount();
+    _fTileChars = true;
+}
+
 CItem* CWorldSearch::GetItem()
 {
 	// This method is called very frequently, ADDTOCALLSTACK unneededly sucks cpu
@@ -288,14 +319,43 @@ CChar* CWorldSearch::GetChar()
 			_eSearchType = ws_search_e::Chars;
 			_fInertToggle = false;
 
-            LoadSectorObjs(_pSector->m_Chars_Active);
+            LoadSectorChars();
 		}
+        else if (_fTileChars)
+        {
+            if (_pTileCharsList->GetModCount() == _uiTileCharsModCount)
+            {
+                ++_uiTileCharIndex;
+            }
+            else
+            {
+                // The list changed (a char was added, removed or moved): check every char after the current one,
+                //  like the search without the index would do. Nothing changes while we skip chars in the same call,
+                //  so the current one is the last we returned.
+                _fTileChars = false;
+                const auto ppEnd = _ppCurContObjs + _uiObjArraySize;
+                _uiCurObjIndex = (size_t)(std::find(_ppCurContObjs, ppEnd, _pObj) - _ppCurContObjs) + 1;
+            }
+        }
 		else
 		{
             ++_uiCurObjIndex;
 		}
 
 		ASSERT(_eSearchType == ws_search_e::Chars);
+        if (_fTileChars)
+        {
+            if (_uiTileCharIndex < _vTileChars.size())
+            {
+                _pObj = static_cast<CObjBase*>(_vTileChars[_uiTileCharIndex]);
+                if (IsInRange(_pObj->GetTopPoint()))
+                    return static_cast <CChar*> (_pObj);
+                continue;
+            }
+            _fTileChars = false;
+            _uiCurObjIndex = _uiObjArraySize;   // Done with this list.
+        }
+
         if (_uiCurObjIndex >= _uiObjArraySize)
 		{
             _pObj = nullptr;

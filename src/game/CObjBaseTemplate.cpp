@@ -21,14 +21,14 @@ int CObjBaseTemplate::IsWeird() const
 	return 0;
 }
 
-// The container can index its elements by position (see CItemsList): tell it when the x,y position changes.
+// The container can index its elements by position (see CItemsList, CCharsActiveList): tell it when the x,y position changes.
 static inline void NotifyContainerPosChange(const CSObjContRec *pRec, const CPointMap &ptOld, short x, short y) noexcept
 {
     if ((ptOld.m_x != x) || (ptOld.m_y != y))
     {
         if (CSObjCont *pParent = pRec->GetParent())
         {
-            pParent->OnContentPosChanged();
+            pParent->OnContentPosChanged(pRec, ptOld.m_x, ptOld.m_y, x, y);
         }
     }
 }

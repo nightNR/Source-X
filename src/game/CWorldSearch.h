@@ -3,6 +3,7 @@
 
 #include "../common/sphere_library/CSReferenceCount.h"
 #include "../common/CRect.h"
+#include <vector>
 
 /*
 #ifdef MSVC_COMPILER
@@ -20,6 +21,7 @@
 */
 
 class CSObjContRec;
+class CSObjCont;
 class CObjBase;
 class CSector;
 class CChar;
@@ -49,6 +51,13 @@ class CWorldSearch
     size_t _uiCurObjIndex;
     size_t _uiObjArrayCapacity;
     size_t _uiObjArraySize;
+
+    // Single tile char searches: the chars found in the tile index of the sector, the rest of _ppCurContObjs is skipped.
+    std::vector<CSObjContRec*> _vTileChars;
+    size_t _uiTileCharIndex;
+    const CSObjCont* _pTileCharsList;   // The list the chars were taken from...
+    uint _uiTileCharsModCount;          // ... and its modification counter at that time.
+    bool _fTileChars;                   // Using _vTileChars.
 
     int		 _iSectorCur;		// What is the current Sector index in m_rectSector
     CSector* _pSectorBase;		// Don't search the center sector 2 times.
@@ -87,6 +96,7 @@ private:
     void LoadSectorObjs(CSObjCont const& pSectorObjList);
     void ReserveObjArray(size_t uiCount);
     void LoadSectorItems();
+    void LoadSectorChars();
 };
 
 // This is called for every object in the searched sectors, so keep it inline and cheap.

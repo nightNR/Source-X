@@ -26,7 +26,7 @@ void CSObjContRec::RemoveSelf()
 // CSObjCont:: Constructors, Destructor, Assign operator.
 
 CSObjCont::CSObjCont() :
-    _fClearingContainer(false), _uiModCount(0)
+    _fClearingContainer(false), _fTrackContentPos(false), _uiModCount(0)
 {
 }
 
