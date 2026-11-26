@@ -389,24 +389,21 @@ bool CScriptKeyAlloc::ParseKey( lpctstr ptcKey, lpctstr pszVal )
 	return true;
 }
 
-size_t CScriptKeyAlloc::ParseKeyEnd()
+static size_t ParseLineEnd(tchar * ptcLine)
 {
-	//ADDTOCALLSTACK("CScriptKeyAlloc::ParseKeyEnd");
 	// Now parse the line for comments and trailing whitespace junk
 	// NOTE: leave leading whitespace for now.
-
-	ASSERT(m_pszKey);
 
 	int len = 0;
 	for ( ; len < SCRIPT_MAX_LINE_LEN; ++len )
 	{
-		tchar ch = m_pszKey[len];
+		tchar ch = ptcLine[len];
 		if ( ch == '\0' )
 			break;
-		if ( ch == '/' && m_pszKey[len + 1] == '/' )
+		if ( ch == '/' && ptcLine[len + 1] == '/' )
 		{
 		    // Don't treat "://" (http://, https://) as a comment start.
-		    if ( (len > 0) && (m_pszKey[len - 1] == ':') )
+		    if ( (len > 0) && (ptcLine[len - 1] == ':') )
 		    {
 		        ++len;	// skip the second slash too
 		        continue;
@@ -418,12 +415,19 @@ size_t CScriptKeyAlloc::ParseKeyEnd()
 	}
 
 	// Remove CR and LF from the end of the line.
-	len = Str_TrimEndWhitespace( m_pszKey, len );
+	len = Str_TrimEndWhitespace( ptcLine, len );
 	if ( len <= 0 )		// fRemoveBlanks &&
 		return 0;
 
-	m_pszKey[len] = '\0';
+	ptcLine[len] = '\0';
 	return len;
+}
+
+size_t CScriptKeyAlloc::ParseKeyEnd()
+{
+	//ADDTOCALLSTACK("CScriptKeyAlloc::ParseKeyEnd");
+	ASSERT(m_pszKey);
+	return ParseLineEnd(m_pszKey);
 }
 
 void CScriptKeyAlloc::ParseKeyLate()
@@ -459,7 +463,70 @@ void CScript::_InitBase()
 	m_iResourceFileIndex = -1;
 	m_iLineNum = m_iSectionData = 0;
 	m_fSectionHead = _fCacheToBeUpdated = false;
+	m_pLineInfo = nullptr;
 	InitKey();
+}
+
+void CScript::_BuildLineInfo()
+{
+    ADDTOCALLSTACK("CScript::_BuildLineInfo");
+    // Parse each cached line once, as _ReadTextLine(true) and ReadKeyParse would do, and store the result.
+    if (_lineInfo && _fRealFile)
+        delete _lineInfo;
+    _lineInfo = nullptr;
+    if (!_fileContent || !_fRealFile || _useDefaultFile())
+        return;
+
+    constexpr ushort kuiNone = CScriptLineInfo::kuiNone;
+    _lineInfo = new std::vector<CScriptLineInfo>(_fileContent->size(), CScriptLineInfo{kuiNone, kuiNone, kuiNone, kuiNone});
+
+    CScriptKeyArgBuf bufParsed, bufOrig;
+    for (size_t i = 0; i < _fileContent->size(); ++i)
+    {
+        const std::string& sLine = (*_fileContent)[i];
+        CScriptLineInfo& info = (*_lineInfo)[i];
+
+        // _ReadString would truncate longer lines: leave them to the usual path.
+        if (sLine.size() >= sm_TextBufMaxSize - 1)
+            continue;
+
+        tchar* ptcLine = bufParsed.data();
+        memcpy(ptcLine, sLine.data(), sLine.size());
+        ptcLine[sLine.size()] = '\0';
+
+        const size_t uiLen = ParseLineEnd(ptcLine);
+        info.uiLen = (ushort)uiLen;
+        if (uiLen == 0)
+            continue;
+
+        memcpy(bufOrig.data(), ptcLine, uiLen + 1);
+        tchar* ptcKey = ptcLine;
+        GETNONWHITESPACE(ptcKey);
+        tchar* ptcArg = nullptr;
+        Str_Parse(ptcKey, &ptcArg);
+
+        // Str_Parse should only put a '\0' at the end of the key (the line was already ended after the argument): remember where.
+        // If it changed the line in any other way, ReadKeyParse will parse it as usual.
+        ushort uiNul = kuiNone;
+        bool fUsable = true;
+        for (size_t j = 0; j < uiLen; ++j)
+        {
+            if (ptcLine[j] == bufOrig[j])
+                continue;
+            if ((ptcLine[j] != '\0') || (uiNul != kuiNone))
+            {
+                fUsable = false;
+                break;
+            }
+            uiNul = (ushort)j;
+        }
+        if (!fUsable || !ptcArg)
+            continue;
+
+        info.uiKey = (ushort)(ptcKey - ptcLine);
+        info.uiArg = (ushort)(ptcArg - ptcLine);
+        info.uiNul = uiNul;
+    }
 }
 
 void CScript::CopyParseState(const CScript& other) noexcept
@@ -514,6 +581,7 @@ bool CScript::_Open( lpctstr ptcFilename, uint uiFlags )
             return false;
         }
         _fCacheToBeUpdated = false;
+        _BuildLineInfo();
 	}
 
 	return true;
@@ -534,6 +602,22 @@ bool CScript::_ReadTextLine( bool fRemoveBlanks ) // Read a line from the opened
 	// fRemoveBlanks = Don't report any blank lines, (just keep reading)
 
     tchar* ptcBuf = _GetKeyBufferRaw();
+    m_pLineInfo = nullptr;
+    if ( fRemoveBlanks )
+    {
+        // Fast path: the line was already trimmed when the file was loaded.
+        int iLinesRead = 0;
+        const int iRet = CCacheableScriptFile::_ReadTrimmedLine( ptcBuf, iLinesRead, m_pLineInfo );
+        m_iLineNum += iLinesRead;
+        if ( iRet > 0 )
+            return true;
+        if ( iRet == 0 )
+        {
+            m_pszKey[0] = '\0';
+            return false;
+        }
+    }
+
     while ( CCacheableScriptFile::_ReadString( ptcBuf, sizeof(CScriptKeyArgBuf) ))
 	{
 		++m_iLineNum;
@@ -725,9 +809,21 @@ bool CScript::ReadKeyParse() // Read line from script
 	}
 
 	ASSERT(m_pszKey);
-	GETNONWHITESPACE( m_pszKey );
-	EXC_SET_BLOCK("parse");
-	Str_Parse( m_pszKey, &m_pszArg );
+	if ( m_pLineInfo && (m_pLineInfo->uiKey != CScriptLineInfo::kuiNone) )
+	{
+		// Same as below, with the parsing already done when the file was loaded.
+		tchar* ptcLine = m_pszKey;
+		if ( m_pLineInfo->uiNul != CScriptLineInfo::kuiNone )
+			ptcLine[m_pLineInfo->uiNul] = '\0';
+		m_pszKey = ptcLine + m_pLineInfo->uiKey;
+		m_pszArg = ptcLine + m_pLineInfo->uiArg;
+	}
+	else
+	{
+		GETNONWHITESPACE( m_pszKey );
+		EXC_SET_BLOCK("parse");
+		Str_Parse( m_pszKey, &m_pszArg );
+	}
 
 	//if ( !m_pszArg[0] || m_pszArg[1] != '=' || !strchr( ".*+-/%|&!^", m_pszArg[0] ) )
 	if ( !m_pszArg[0] || ( m_pszArg[1] != '=' && m_pszArg[1] != '+' && m_pszArg[1] != '-' ) || !strchr( ".*+-/%|&!^", m_pszArg[0] ) )

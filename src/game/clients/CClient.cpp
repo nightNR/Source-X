@@ -550,7 +550,7 @@ lpctstr const CClient::sm_szRefKeys[CLIR_QTY+1] =
 bool CClient::r_GetRef( lpctstr & ptcKey, CScriptObj * & pRef )
 {
 	ADDTOCALLSTACK("CClient::r_GetRef");
-	int i = FindTableHeadSorted( ptcKey, sm_szRefKeys, ARRAY_COUNT(sm_szRefKeys)-1 );
+	int i = FindTableHeadSortedCached( ptcKey, sm_szRefKeys, ARRAY_COUNT(sm_szRefKeys)-1 );
 	if ( i >= 0 )
 	{
 		ptcKey += strlen( sm_szRefKeys[i] );
@@ -671,7 +671,7 @@ bool CClient::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSrc, 
 	else if ( !strnicmp( "REPORTEDCLIVER", ptcKey, 14 ) && ( ptcKey[14] == '\0' || ptcKey[14] == '.' ) )
 		index = CC_REPORTEDCLIVER;
 	else
-		index = FindTableSorted( ptcKey, sm_szLoadKeys, ARRAY_COUNT(sm_szLoadKeys)-1 );
+		index = FindTableSortedCached( ptcKey, sm_szLoadKeys, ARRAY_COUNT(sm_szLoadKeys)-1 );
 
 	switch (index)
 	{

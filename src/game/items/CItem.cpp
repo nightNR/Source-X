@@ -2619,7 +2619,7 @@ bool CItem::r_GetRef( lpctstr & ptcKey, CScriptObj * & pRef )
         return true;
     }
 
-	int i = FindTableHeadSorted( ptcKey, sm_szRefKeys, ARRAY_COUNT(sm_szRefKeys)-1 );
+	int i = FindTableHeadSortedCached( ptcKey, sm_szRefKeys, ARRAY_COUNT(sm_szRefKeys)-1 );
 	if ( i >= 0 )
 	{
 		ptcKey += strlen( sm_szRefKeys[i] );
@@ -2694,7 +2694,7 @@ bool CItem::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSrc, bo
 	if ( !strnicmp( CItem::sm_szLoadKeys[IC_ADDSPELL], ptcKey, 8 ) )
 		index = IC_ADDSPELL;
 	else
-		index = FindTableSorted( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 );
+		index = FindTableSortedCached( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 );
 
 	bool fDoDefault = false;
 
@@ -3738,11 +3738,17 @@ bool CItem::IsTriggerActive(lpctstr trig) const
 {
     if (((_iRunningTriggerId == -1) && _sRunningTrigger.IsEmpty()) || (trig == nullptr))
         return false;
+    return IsTriggerActive(trig, FindTableSorted( trig, CItem::sm_szTrigName, ARRAY_COUNT(CItem::sm_szTrigName)-1 ));
+}
+
+bool CItem::IsTriggerActive(lpctstr trig, int iTrigId) const
+{
+    if (((_iRunningTriggerId == -1) && _sRunningTrigger.IsEmpty()) || (trig == nullptr))
+        return false;
     if (_iRunningTriggerId != -1)
     {
         ASSERT(_iRunningTriggerId < ITRIG_QTY);
-        int iAction = FindTableSorted( trig, CItem::sm_szTrigName, ARRAY_COUNT(CItem::sm_szTrigName)-1 );
-        return (_iRunningTriggerId == iAction);
+        return (_iRunningTriggerId == iTrigId);
     }
     ASSERT(!_sRunningTrigger.IsEmpty());
     return (strcmpi(_sRunningTrigger.GetBuffer(), trig) == 0);
@@ -3756,22 +3762,64 @@ void CItem::SetTriggerActive(lpctstr trig)
         _sRunningTrigger.Clear();
         return;
     }
-    int iAction = FindTableSorted( trig, CItem::sm_szTrigName, ARRAY_COUNT(CItem::sm_szTrigName)-1 );
-    if (iAction != -1)
+    SetTriggerActive(trig, FindTableSorted( trig, CItem::sm_szTrigName, ARRAY_COUNT(CItem::sm_szTrigName)-1 ));
+}
+
+void CItem::SetTriggerActive(lpctstr trig, int iTrigId)
+{
+    if (trig == nullptr)
     {
-        _iRunningTriggerId = (short)iAction;
-		_sRunningTrigger = CItem::sm_szTrigName[iAction];
+        SetTriggerActive(nullptr);
+        return;
+    }
+    if (iTrigId != -1)
+    {
+        _iRunningTriggerId = (short)iTrigId;
+		_sRunningTrigger = CItem::sm_szTrigName[iTrigId];
         return;
     }
     _sRunningTrigger = trig;
     _iRunningTriggerId = -1;
 }
 
+// Per ITRIG_TYPE, computed once: the matching "@Item..." char trigger and the E_TRIGGERS indexes,
+// so OnTrigger doesn't have to look up trigger names on every call.
+struct CItemTrigLookup
+{
+    short iCharTrig[ITRIG_QTY];     // CTRIG_TYPE of "@Item" + name, -1 if none
+    short iUsedId[ITRIG_QTY];       // E_TRIGGERS of the trigger, -1 if not there
+    short iCharUsedId[ITRIG_QTY];   // E_TRIGGERS of the "@Item" trigger, -1 if not there
+};
+
+static const CItemTrigLookup& GetItemTrigLookup()
+{
+    static const CItemTrigLookup s_lookup = []()
+    {
+        CItemTrigLookup t{};
+        for (int i = 0; i < ITRIG_QTY; ++i)
+        {
+            tchar ptcCharTrigName[TRIGGER_NAME_MAX_LEN] = "@ITEM";
+            Str_ConcatLimitNull(ptcCharTrigName + 5, CItem::sm_szTrigName[i] + 1, TRIGGER_NAME_MAX_LEN - 5);
+            t.iCharTrig[i] = (short)FindTableSorted(ptcCharTrigName, CChar::sm_szTrigName, ARRAY_COUNT(CChar::sm_szTrigName) - 1);
+            t.iUsedId[i] = (short)TriglistFindIndex(CItem::sm_szTrigName[i]);
+            t.iCharUsedId[i] = (short)TriglistFindIndex(ptcCharTrigName);
+        }
+        return t;
+    }();
+    return s_lookup;
+}
+
+static bool IsTrigUsedIndex(int iUsedId, lpctstr ptcTrigName)
+{
+    return (iUsedId >= 0) ? IsTrigUsed((E_TRIGGERS)iUsedId) : IsTrigUsed(ptcTrigName);
+}
+
 TRIGRET_TYPE CItem::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const& pScriptArgs, CTextConsole * pSrc )
 {
 	ADDTOCALLSTACK("CItem::OnTrigger");
 
-	if (IsTriggerActive(pszTrigName)) //This should protect any item trigger from infinite loop
+    const int iTrigId = FindTableSorted( pszTrigName, CItem::sm_szTrigName, ARRAY_COUNT(CItem::sm_szTrigName)-1 );
+	if (IsTriggerActive(pszTrigName, iTrigId)) //This should protect any item trigger from infinite loop
 		return TRIGRET_RET_ABORTED;
 
     ASSERT(pScriptArgs);
@@ -3781,8 +3829,9 @@ TRIGRET_TYPE CItem::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
     CItemBase * pItemDef = Item_GetDef();
     ASSERT(pItemDef);
 
-    SetTriggerActive( pszTrigName );
+    SetTriggerActive( pszTrigName, iTrigId );
     const ITRIG_TYPE iAction = (ITRIG_TYPE)_iRunningTriggerId;
+    const CItemTrigLookup& trigLookup = GetItemTrigLookup();
     // Is there trigger code in the script file ?
     // RETURN:
     //   false = continue default process normally.
@@ -3798,10 +3847,25 @@ TRIGRET_TYPE CItem::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
 standard_order:
 	// 1) Triggers installed on character, sensitive to actions on all items
     {
-		tchar ptcCharTrigName[TRIGGER_NAME_MAX_LEN] = "@ITEM";
-		Str_ConcatLimitNull(ptcCharTrigName + 5, pszTrigName + 1, TRIGGER_NAME_MAX_LEN - 5);
-        const CTRIG_TYPE iCharAction = (CTRIG_TYPE)FindTableSorted(ptcCharTrigName, CChar::sm_szTrigName, ARRAY_COUNT(CChar::sm_szTrigName) - 1);
-        if ((iCharAction > XTRIG_UNKNOWN) && IsTrigUsed(ptcCharTrigName))
+        CTRIG_TYPE iCharAction;
+        bool fCharTrigUsed;
+        lpctstr ptcCharTrigName;
+        tchar ptcCharTrigNameBuf[TRIGGER_NAME_MAX_LEN];
+        if (iAction > XTRIG_UNKNOWN)
+        {
+            iCharAction = (CTRIG_TYPE)trigLookup.iCharTrig[iAction];
+            ptcCharTrigName = (iCharAction > XTRIG_UNKNOWN) ? CChar::sm_szTrigName[iCharAction] : nullptr;
+            fCharTrigUsed = (iCharAction > XTRIG_UNKNOWN) && IsTrigUsedIndex(trigLookup.iCharUsedId[iAction], ptcCharTrigName);
+        }
+        else
+        {
+            Str_CopyLimitNull(ptcCharTrigNameBuf, "@ITEM", TRIGGER_NAME_MAX_LEN);
+            Str_ConcatLimitNull(ptcCharTrigNameBuf + 5, pszTrigName + 1, TRIGGER_NAME_MAX_LEN - 5);
+            ptcCharTrigName = ptcCharTrigNameBuf;
+            iCharAction = (CTRIG_TYPE)FindTableSorted(ptcCharTrigName, CChar::sm_szTrigName, ARRAY_COUNT(CChar::sm_szTrigName) - 1);
+            fCharTrigUsed = (iCharAction > XTRIG_UNKNOWN) && IsTrigUsed(ptcCharTrigName);
+        }
+        if (fCharTrigUsed)
         {
             CChar* pChar = pSrc->GetChar();
             if (pChar != nullptr)
@@ -3817,7 +3881,7 @@ standard_order:
         }
     }
 
-	if ( IsTrigUsed(pszTrigName) )
+	if ( (iAction > XTRIG_UNKNOWN) ? IsTrigUsedIndex(trigLookup.iUsedId[iAction], pszTrigName) : IsTrigUsed(pszTrigName) )
 	{
 		//	2) EVENTS (could be modified ingame!)
         {
@@ -3830,11 +3894,8 @@ standard_order:
                 CResourceLink* pLink = m_OEvents[i].GetRef();
                 if (!pLink || !pLink->HasTrigger(iAction))
                     continue;
-                CResourceLock s;
-                if (!pLink->ResourceLock(s))
+                if (!OnTriggerLink(pLink, pszTrigName, pScriptArgs, pSrc, iRet))
                     continue;
-
-                iRet = CScriptObj::OnTriggerScript(s, pszTrigName, pScriptArgs, pSrc);
                 if (iRet != TRIGRET_RET_FALSE && iRet != TRIGRET_RET_DEFAULT)
                     goto stopandret;
 
@@ -3855,10 +3916,8 @@ standard_order:
 			ASSERT(pLink);
 			if ( !pLink->HasTrigger(iAction) )
 				continue;
-			CResourceLock s;
-			if ( !pLink->ResourceLock(s) )
+			if ( !OnTriggerLink(pLink, pszTrigName, pScriptArgs, pSrc, iRet) )
 				continue;
-            iRet = CScriptObj::OnTriggerScript(s, pszTrigName, pScriptArgs, pSrc);
 			if ( iRet != TRIGRET_RET_FALSE && iRet != TRIGRET_RET_DEFAULT )
 				goto stopandret;
 		}
@@ -3870,10 +3929,8 @@ standard_order:
 			CResourceLink * pLink = g_Cfg.m_iEventsItemLink[i].GetRef();
 			if ( !pLink || !pLink->HasTrigger(iAction) )
 				continue;
-			CResourceLock s;
-			if ( !pLink->ResourceLock(s) )
+			if ( !OnTriggerLink(pLink, pszTrigName, pScriptArgs, pSrc, iRet) )
 				continue;
-            iRet = CScriptObj::OnTriggerScript(s, pszTrigName, pScriptArgs, pSrc);
 			if ( iRet != TRIGRET_RET_FALSE && iRet != TRIGRET_RET_DEFAULT )
 				goto stopandret;
 		}
@@ -3897,10 +3954,8 @@ standard_order:
 
 			if ( pResourceLink->HasTrigger( iAction ))
 			{
-				CResourceLock s;
-				if ( pResourceLink->ResourceLock(s))
+				if ( OnTriggerLink(pResourceLink, pszTrigName, pScriptArgs, pSrc, iRet) )
 				{
-                    iRet = CScriptObj::OnTriggerScript( s, pszTrigName, pScriptArgs, pSrc );
 					if ( iRet == TRIGRET_RET_TRUE )
 						goto stopandret;
 				}
@@ -3916,9 +3971,7 @@ from_itemdef_first:
             ASSERT(pResourceLink);
             if (pResourceLink->HasTrigger(iAction))
             {
-                CResourceLock s;
-                if (pResourceLink->ResourceLock(s))
-                    iRet = CScriptObj::OnTriggerScript(s, pszTrigName, pScriptArgs, pSrc);
+                OnTriggerLink(pResourceLink, pszTrigName, pScriptArgs, pSrc, iRet);
             }
 
             // If i'm running the @Create trigger, i jumped here first, but i need to go back and try to run the trigger from the other sources

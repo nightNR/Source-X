@@ -211,7 +211,7 @@ bool CCharPlayer::r_WriteVal( CChar * pChar, lpctstr ptcKey, CSString & sVal )
 		return false;
 	}
 
-	switch ( FindTableHeadSorted( ptcKey, sm_szLoadKeys, CPC_QTY ))
+	switch ( FindTableHeadSortedCached( ptcKey, sm_szLoadKeys, CPC_QTY ))
 	{
 		case CPC_ACCOUNT:
 			sVal = GetAccount()->GetName();
@@ -333,7 +333,7 @@ bool CCharPlayer::r_WriteVal( CChar * pChar, lpctstr ptcKey, CSString & sVal )
 		}
 
 		default:
-			if ( FindTableSorted( ptcKey, CCharNPC::sm_szLoadKeys, CNC_QTY ) >= 0 )
+			if ( FindTableSortedCached( ptcKey, CCharNPC::sm_szLoadKeys, CNC_QTY ) >= 0 )
 			{
 				sVal.SetValFalse();
 				return true;

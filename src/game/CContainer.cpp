@@ -756,7 +756,7 @@ bool CContainer::r_WriteValContainer( lpctstr ptcKey, CSString &sVal, CTextConso
 		"RESTEST"
 	};
 
-	int i = FindTableHeadSorted(ptcKey, sm_szParams, ARRAY_COUNT(sm_szParams));
+	int i = FindTableHeadSortedCached(ptcKey, sm_szParams, ARRAY_COUNT(sm_szParams));
 	if ( i < 0 )
 		return false;
 

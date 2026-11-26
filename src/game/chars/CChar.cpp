@@ -1542,21 +1542,31 @@ height_t CChar::GetHeight() const
 	if ( tmpHeight ) //set by a chardef variable ([CHARDEF 10]  Height=10)
 		return tmpHeight;
 
-    // This is SLOW (since this method is called very frequently)! Move those defs value to CharDef!
+    // The DEF lookups are slow and this method is called very often: their result is cached in the char def,
+    // until the DEFs change (scripts loaded or resynced) or the char def gets another dispid.
     auto gReader = g_ExprGlobals.mtEngineLockedReader();
     const uint uiDispID = (uint)pCharDef->GetDispID();
+    const uint uiDefsGen = gReader->m_uiVarDefsGen;
+    if ( pCharDef->GetDefHeightCache(uiDefsGen, uiDispID, &tmpHeight) )
+    {
+        return tmpHeight;
+    }
+
     char heightDef[20]{"height_"};
     Str_FromUI(uint(uiDispID), heightDef + 7, sizeof(heightDef) - 7, 16);
-    tmpHeight = (height_t)(gReader->m_VarDefs.GetKeyNum(heightDef));
-	if ( tmpHeight ) //set by a defname ([DEFNAME charheight]  height_0a)
-		return tmpHeight;
+    tmpHeight = (height_t)(gReader->m_VarDefs.GetKeyNum(heightDef)); //set by a defname ([DEFNAME charheight]  height_0a)
+    if ( !tmpHeight )
+    {
+        Str_FromUI(uint(uiDispID), heightDef + 7, sizeof(heightDef) - 7, 10);
+        tmpHeight = (height_t)(gReader->m_VarDefs.GetKeyNum(heightDef)); //set by a defname ([DEFNAME charheight]  height_10)
+    }
+    if ( !tmpHeight )
+    {
+        tmpHeight = PLAYER_HEIGHT; //if everything fails
+    }
 
-	Str_FromUI(uint(uiDispID), heightDef + 7, sizeof(heightDef) - 7, 10);
-    tmpHeight = (height_t)(gReader->m_VarDefs.GetKeyNum(heightDef));
-	if ( tmpHeight ) //set by a defname ([DEFNAME charheight]  height_10)
-		return tmpHeight;
-
-	return PLAYER_HEIGHT; //if everything fails
+    pCharDef->SetDefHeightCache(uiDefsGen, uiDispID, tmpHeight);
+    return tmpHeight;
 }
 
 CREID_TYPE CChar::GetID() const
@@ -2223,7 +2233,7 @@ bool CChar::r_GetRef( lpctstr & ptcKey, CScriptObj * & pRef )
         return true;
     }
 
-	int i = FindTableHeadSorted( ptcKey, sm_szRefKeys, ARRAY_COUNT(sm_szRefKeys)-1 );
+	int i = FindTableHeadSortedCached( ptcKey, sm_szRefKeys, ARRAY_COUNT(sm_szRefKeys)-1 );
 	if ( i >= 0 )
 	{
 		ptcKey += strlen( sm_szRefKeys[i] );
@@ -2340,7 +2350,7 @@ bool CChar::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSrc, bo
     }
 
     EXC_SET_BLOCK("Keyword");
-	const CHC_TYPE iKeyNum = (CHC_TYPE) FindTableHeadSorted( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 );
+	const CHC_TYPE iKeyNum = (CHC_TYPE) FindTableHeadSortedCached( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 );
 	if ( iKeyNum < 0 )
 	{
 do_default:
