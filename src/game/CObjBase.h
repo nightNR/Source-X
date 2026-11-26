@@ -53,6 +53,47 @@ protected:
     short _iRunningTriggerId;       // Current trigger being run on this object. Used to prevent the same trigger being called over and over.
     short _iCallingObjTriggerId;    // I am running a trigger called via TRIGGER (CallPersonalTrigger method). In which trigger (OF THIS SAME OBJECT) was this call executed?
 
+    ushort _uiRunningTriggerDepth;  // How many trigger calls (OnTrigger) are running on this object, nested.
+
+    // Keeps the trigger which was running on this object before a trigger call, and restores it when the call ends (also
+    //  when an exception leaves it). A trigger fired from inside another one on the same object must not clear the running
+    //  trigger of the outer one, which would then not be protected anymore from being called again by itself.
+    // A running trigger set outside of any trigger call (SetTriggerActive) is cleared when the call ends, as before.
+    class CRunningTriggerRestore
+    {
+        CObjBase& _obj;
+        const short _iPrevTriggerId;
+        const bool _fNested;
+        CSString _sPrevTrigger;     // Copied only for a nested trigger call.
+
+    public:
+        explicit CRunningTriggerRestore(CObjBase& obj) :
+            _obj(obj), _iPrevTriggerId(obj._iRunningTriggerId), _fNested(obj._uiRunningTriggerDepth > 0)
+        {
+            if (_fNested)
+            {
+                _sPrevTrigger = obj._sRunningTrigger;
+            }
+            ++obj._uiRunningTriggerDepth;
+        }
+        ~CRunningTriggerRestore() noexcept
+        {
+            --_obj._uiRunningTriggerDepth;
+            if (_fNested)
+            {
+                _obj._iRunningTriggerId = _iPrevTriggerId;
+                _obj._sRunningTrigger = std::move(_sPrevTrigger);
+            }
+            else
+            {
+                _obj._iRunningTriggerId = -1;
+                _obj._sRunningTrigger.Clear();  // Keeps the buffer, for the next trigger.
+            }
+        }
+        CRunningTriggerRestore(const CRunningTriggerRestore&) = delete;
+        CRunningTriggerRestore& operator=(const CRunningTriggerRestore&) = delete;
+    };
+
 public:
     static const char *m_sClassName;
     static dword sm_iCount;    // how many total objects in the world ?

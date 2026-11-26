@@ -5614,6 +5614,8 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
 	CCharBase* pCharDef = Char_GetDef();
     ASSERT(pCharDef);
 
+    // Restores the trigger running before this one (if this one is fired from inside it) when this call ends.
+    const CRunningTriggerRestore runningTriggerRestore(*this);
     SetTriggerActive( pszTrigName );
     const CTRIG_TYPE iAction = (CTRIG_TYPE)_iRunningTriggerId;
     // Attach some trigger to the cchar. (PC or NPC)
@@ -5766,7 +5768,6 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
 	}
 
 stopandret:
-    SetTriggerActive(nullptr);
     return iRet;
 	EXC_CATCH;
 
