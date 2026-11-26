@@ -132,6 +132,16 @@ public:
 	    return CServerDef::GetName();
     }
 	virtual PLEVEL_TYPE GetPrivLevel() const override;
+
+	// The server is never a CChar: skip the (failing) dynamic_cast of CTextConsole::GetChar.
+	virtual CChar * GetChar() override
+	{
+		return nullptr;
+	}
+	virtual const CChar * GetChar() const override
+	{
+		return nullptr;
+	}
 } g_Serv;	// current state stuff not saved.
 
 

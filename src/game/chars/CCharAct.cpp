@@ -5563,11 +5563,17 @@ bool CChar::IsTriggerActive(lpctstr trig) const
 {
     if (((_iRunningTriggerId == -1) && _sRunningTrigger.IsEmpty()) || (trig == nullptr))
         return false;
+    return IsTriggerActive(trig, FindTableSorted( trig, CChar::sm_szTrigName, ARRAY_COUNT(CChar::sm_szTrigName)-1 ));
+}
+
+bool CChar::IsTriggerActive(lpctstr trig, int iTrigId) const
+{
+    if (((_iRunningTriggerId == -1) && _sRunningTrigger.IsEmpty()) || (trig == nullptr))
+        return false;
     if (_iRunningTriggerId != -1)
     {
         ASSERT(_iRunningTriggerId < CTRIG_QTY);
-        const int iAction = FindTableSorted( trig, CChar::sm_szTrigName, ARRAY_COUNT(CChar::sm_szTrigName)-1 );
-        return (_iRunningTriggerId == iAction);
+        return (_iRunningTriggerId == iTrigId);
     }
     ASSERT(!_sRunningTrigger.IsEmpty());
     return (strcmpi(_sRunningTrigger.GetBuffer(), trig) == 0);
@@ -5581,16 +5587,58 @@ void CChar::SetTriggerActive(lpctstr trig)
         _sRunningTrigger.Clear();
         return;
     }
-	const int iAction = FindTableSorted( trig, CChar::sm_szTrigName, ARRAY_COUNT(CChar::sm_szTrigName)-1 );
-    if (iAction != -1)
+    SetTriggerActive(trig, FindTableSorted( trig, CChar::sm_szTrigName, ARRAY_COUNT(CChar::sm_szTrigName)-1 ));
+}
+
+void CChar::SetTriggerActive(lpctstr trig, int iTrigId)
+{
+    if (trig == nullptr)
     {
-        _iRunningTriggerId = (short)iAction;
-        _sRunningTrigger = CChar::sm_szTrigName[iAction];
+        SetTriggerActive(nullptr);
+        return;
+    }
+    if (iTrigId != -1)
+    {
+        _iRunningTriggerId = (short)iTrigId;
+        _sRunningTrigger = CChar::sm_szTrigName[iTrigId];
         return;
     }
     _sRunningTrigger = trig;
     _iRunningTriggerId = -1;
 }
+
+// Per CTRIG_TYPE, computed once: the matching "@Char..." trigger and the E_TRIGGERS indexes,
+// so OnTrigger doesn't have to look up trigger names on every call.
+struct CCharTrigLookup
+{
+    short iCharTrig[CTRIG_QTY];     // CTRIG_TYPE of "@Char" + name, -1 if none
+    short iUsedId[CTRIG_QTY];       // E_TRIGGERS of the trigger, -1 if not there
+    short iCharUsedId[CTRIG_QTY];   // E_TRIGGERS of the "@Char" trigger, -1 if not there
+};
+
+static const CCharTrigLookup& GetCharTrigLookup()
+{
+    static const CCharTrigLookup s_lookup = []()
+    {
+        CCharTrigLookup t{};
+        for (int i = 0; i < CTRIG_QTY; ++i)
+        {
+            tchar ptcCharTrigName[TRIGGER_NAME_MAX_LEN] = "@CHAR";
+            Str_ConcatLimitNull(ptcCharTrigName + 5, CChar::sm_szTrigName[i] + 1, TRIGGER_NAME_MAX_LEN - 5);
+            t.iCharTrig[i] = (short)FindTableSorted(ptcCharTrigName, CChar::sm_szTrigName, ARRAY_COUNT(CChar::sm_szTrigName) - 1);
+            t.iUsedId[i] = (short)TriglistFindIndex(CChar::sm_szTrigName[i]);
+            t.iCharUsedId[i] = (short)TriglistFindIndex(ptcCharTrigName);
+        }
+        return t;
+    }();
+    return s_lookup;
+}
+
+static bool IsTrigUsedIndex(int iUsedId, lpctstr ptcTrigName)
+{
+    return (iUsedId >= 0) ? IsTrigUsed((E_TRIGGERS)iUsedId) : IsTrigUsed(ptcTrigName);
+}
+
 
 // Running a trigger for chars
 // order:
@@ -5604,7 +5652,8 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
 {
 	ADDTOCALLSTACK("CChar::OnTrigger");
 
-	if ( IsTriggerActive( pszTrigName ) ) //This should protect any char trigger from infinite loop
+    const int iTrigId = FindTableSorted( pszTrigName, CChar::sm_szTrigName, ARRAY_COUNT(CChar::sm_szTrigName)-1 );
+	if ( IsTriggerActive( pszTrigName, iTrigId ) ) //This should protect any char trigger from infinite loop
 		return TRIGRET_RET_DEFAULT;
 
     ASSERT(pScriptArgs);
@@ -5614,8 +5663,9 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
 	CCharBase* pCharDef = Char_GetDef();
     ASSERT(pCharDef);
 
-    SetTriggerActive( pszTrigName );
+    SetTriggerActive( pszTrigName, iTrigId );
     const CTRIG_TYPE iAction = (CTRIG_TYPE)_iRunningTriggerId;
+    const CCharTrigLookup& trigLookup = GetCharTrigLookup();
     // Attach some trigger to the cchar. (PC or NPC)
     // RETURN: true = block further action.
     TRIGRET_TYPE iRet = TRIGRET_RET_ABORTED;
@@ -5624,10 +5674,25 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
 
 	// 1) Triggers installed on characters, sensitive to actions on all chars
     {
-		tchar ptcCharTrigName[TRIGGER_NAME_MAX_LEN] = "@CHAR";
-		Str_ConcatLimitNull(ptcCharTrigName + 5, pszTrigName + 1, TRIGGER_NAME_MAX_LEN - 5);
-        const CTRIG_TYPE iCharAction = (CTRIG_TYPE)FindTableSorted(ptcCharTrigName, sm_szTrigName, ARRAY_COUNT(sm_szTrigName) - 1);
-        if ((iCharAction > XTRIG_UNKNOWN) && IsTrigUsed(ptcCharTrigName))
+        CTRIG_TYPE iCharAction;
+        bool fCharTrigUsed;
+        lpctstr ptcCharTrigName;
+        tchar ptcCharTrigNameBuf[TRIGGER_NAME_MAX_LEN];
+        if (iAction > XTRIG_UNKNOWN)
+        {
+            iCharAction = (CTRIG_TYPE)trigLookup.iCharTrig[iAction];
+            ptcCharTrigName = (iCharAction > XTRIG_UNKNOWN) ? sm_szTrigName[iCharAction] : nullptr;
+            fCharTrigUsed = (iCharAction > XTRIG_UNKNOWN) && IsTrigUsedIndex(trigLookup.iCharUsedId[iAction], ptcCharTrigName);
+        }
+        else
+        {
+            Str_CopyLimitNull(ptcCharTrigNameBuf, "@CHAR", TRIGGER_NAME_MAX_LEN);
+            Str_ConcatLimitNull(ptcCharTrigNameBuf + 5, pszTrigName + 1, TRIGGER_NAME_MAX_LEN - 5);
+            ptcCharTrigName = ptcCharTrigNameBuf;
+            iCharAction = (CTRIG_TYPE)FindTableSorted(ptcCharTrigName, sm_szTrigName, ARRAY_COUNT(sm_szTrigName) - 1);
+            fCharTrigUsed = (iCharAction > XTRIG_UNKNOWN) && IsTrigUsed(ptcCharTrigName);
+        }
+        if (fCharTrigUsed)
         {
             CChar* pChar = pSrc->GetChar();
             if (pChar != nullptr && this != pChar)
@@ -5647,13 +5712,38 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
 	//
 	// Go through the event blocks for the NPC/PC to do events.
 	//
-	if ( IsTrigUsed(pszTrigName) )
+	if ( (iAction > XTRIG_UNKNOWN) ? IsTrigUsedIndex(trigLookup.iUsedId[iAction], pszTrigName) : IsTrigUsed(pszTrigName) )
 	{
-        std::vector<const CResourceLink*> executedEvents;
-        auto fnShouldSkipLink = [&executedEvents, &iAction](const CResourceLink *pLink) -> bool
+        // Event links already run by this call, so that a link present in more than one list runs only once.
+        // This runs on every trigger fired and chars have only a few events, so keep them on the stack.
+        const CResourceLink* apExecutedEvents[16];
+        size_t uiExecutedEvents = 0;
+        std::vector<const CResourceLink*> vExecutedEventsMore;
+        auto fnAddExecutedEvent = [&](const CResourceLink *pLink)
         {
-            return (!pLink || !pLink->HasTrigger(iAction)
-            || (executedEvents.end() != std::find(executedEvents.begin(), executedEvents.end(), pLink)));
+            if (uiExecutedEvents < ARRAY_COUNT(apExecutedEvents))
+            {
+                apExecutedEvents[uiExecutedEvents++] = pLink;
+            }
+            else
+            {
+                vExecutedEventsMore.emplace_back(pLink);
+            }
+        };
+        auto fnShouldSkipLink = [&](const CResourceLink *pLink) -> bool
+        {
+            if (!pLink || !pLink->HasTrigger(iAction))
+            {
+                return true;
+            }
+            for (size_t i = 0; i < uiExecutedEvents; ++i)
+            {
+                if (apExecutedEvents[i] == pLink)
+                {
+                    return true;
+                }
+            }
+            return (vExecutedEventsMore.end() != std::find(vExecutedEventsMore.begin(), vExecutedEventsMore.end(), pLink));
         };
 
         {
@@ -5666,12 +5756,9 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
                 if (fnShouldSkipLink(pLink))
                     continue;
 
-                CResourceLock s;
-                if (!pLink->ResourceLock(s))
+                if (!OnTriggerLink(pLink, pszTrigName, pScriptArgs, pSrc, iRet))
                     continue;
-
-                executedEvents.emplace_back(pLink);
-                iRet = CScriptObj::OnTriggerScript(s, pszTrigName, pScriptArgs, pSrc);
+                fnAddExecutedEvent(pLink);
                 if (iRet != TRIGRET_RET_FALSE && iRet != TRIGRET_RET_DEFAULT)
                     goto stopandret;
 
@@ -5694,12 +5781,9 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
                 if (fnShouldSkipLink(pLink))
 					continue;
 
-				CResourceLock s;
-				if (!pLink->ResourceLock(s))
+				if (!OnTriggerLink(pLink, pszTrigName, pScriptArgs, pSrc, iRet))
 					continue;
-
-                executedEvents.emplace_back(pLink);
-                iRet = CScriptObj::OnTriggerScript(s, pszTrigName, pScriptArgs, pSrc);
+                fnAddExecutedEvent(pLink);
 				if ( iRet != TRIGRET_RET_FALSE && iRet != TRIGRET_RET_DEFAULT )
 					goto stopandret;
 			}
@@ -5711,10 +5795,8 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
 			EXC_SET_BLOCK("chardef triggers");
 			if ( pCharDef->HasTrigger(iAction) )
 			{
-				CResourceLock s;
-				if ( pCharDef->ResourceLock(s) )
+				if ( OnTriggerLink(pCharDef, pszTrigName, pScriptArgs, pSrc, iRet) )
 				{
-                    iRet = CScriptObj::OnTriggerScript(s, pszTrigName, pScriptArgs, pSrc);
 					if (( iRet != TRIGRET_RET_FALSE ) && ( iRet != TRIGRET_RET_DEFAULT ))
 						goto stopandret;
 				}
@@ -5731,12 +5813,9 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
                 if (fnShouldSkipLink(pLink))
 					continue;
 
-				CResourceLock s;
-				if (!pLink->ResourceLock(s))
+				if (!OnTriggerLink(pLink, pszTrigName, pScriptArgs, pSrc, iRet))
 					continue;
-
-                executedEvents.emplace_back(pLink);
-                iRet = CScriptObj::OnTriggerScript(s, pszTrigName, pScriptArgs, pSrc);
+                fnAddExecutedEvent(pLink);
 				if (iRet != TRIGRET_RET_FALSE && iRet != TRIGRET_RET_DEFAULT)
 					goto stopandret;
 			}
@@ -5753,12 +5832,9 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CScriptTriggerArgsPtr const&
                 if (fnShouldSkipLink(pLink))
 					continue;
 
-				CResourceLock s;
-				if (!pLink->ResourceLock(s))
+				if (!OnTriggerLink(pLink, pszTrigName, pScriptArgs, pSrc, iRet))
 					continue;
-
-                executedEvents.emplace_back(pLink);
-                iRet = CScriptObj::OnTriggerScript(s, pszTrigName, pScriptArgs, pSrc);
+                fnAddExecutedEvent(pLink);
 				if ( iRet != TRIGRET_RET_FALSE && iRet != TRIGRET_RET_DEFAULT )
 					goto stopandret;
 			}

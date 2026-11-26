@@ -932,7 +932,7 @@ lpctstr const CObjBase::sm_szRefKeys[OBR_QTY+1] =
 bool CObjBase::r_GetRef( lpctstr & ptcKey, CScriptObj * & pRef )
 {
 	ADDTOCALLSTACK("CObjBase::r_GetRef");
-	int i = FindTableHeadSorted( ptcKey, sm_szRefKeys, ARRAY_COUNT(sm_szRefKeys)-1 );
+	int i = FindTableHeadSortedCached( ptcKey, sm_szRefKeys, ARRAY_COUNT(sm_szRefKeys)-1 );
 	if ( i >= 0 )
 	{
 		ptcKey += strlen( sm_szRefKeys[i] );
@@ -991,7 +991,7 @@ bool CObjBase::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, 
 	ADDTOCALLSTACK("CObjBase::r_WriteVal");
 	EXC_TRY("WriteVal");
 
-    int index = FindTableHeadSorted( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 );
+    int index = FindTableHeadSortedCached( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 );
     if ( !fNoCallChildren && (index < 0) )
     {
         const size_t uiFunctionIndex = r_GetFunctionIndex(ptcKey);
@@ -1184,7 +1184,7 @@ bool CObjBase::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, 
 			}
 		case OC_CTAGCOUNT:
 			{
-				CChar * pChar = dynamic_cast<CChar*>(this);
+				CChar * pChar = GetThisChar();
 				if ( !pChar )
 					sVal.FormatVal( 0 );
 				else
@@ -1442,7 +1442,7 @@ bool CObjBase::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, 
 			break;
 		case OC_ISPLAYER:
 			{
-				CChar * pChar = dynamic_cast<CChar*>(this);
+				CChar * pChar = GetThisChar();
 				if ( pChar )
 					sVal.FormatVal( (pChar->m_pPlayer == nullptr) ? 0 : 1 );
 				else
@@ -1459,7 +1459,7 @@ bool CObjBase::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, 
 				ptcKey += 12;
 				SKIP_SEPARATORS( ptcKey );
 				GETNONWHITESPACE( ptcKey );
-				CChar * pCharToCheck = dynamic_cast<CChar*>(this);
+				CChar * pCharToCheck = GetThisChar();
 				CClient * pClientToCheck = (pCharToCheck && pCharToCheck->IsClientActive()) ? (pCharToCheck->GetClientActive()) : nullptr;
 
 				if ( pClientToCheck )

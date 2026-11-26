@@ -20,6 +20,7 @@ CResourceLink::CResourceLink(const CResourceID& rid, const CVarDefContNum * pDef
 {
     m_pScript = nullptr;
     _dwRefInstances = 0;
+    _fTriggerContextsValid = false;
     ClearTriggers();
 }
 
@@ -75,6 +76,7 @@ void CResourceLink::ScanSection( RES_TYPE restype, bool *pfMultiRegion )
     ClearTriggers();
     if (pfMultiRegion)
         *pfMultiRegion = false;
+    _vTriggerContexts.clear();
 
     while ( m_pScript->ReadKey(false) )
     {
@@ -89,10 +91,18 @@ void CResourceLink::ScanSection( RES_TYPE restype, bool *pfMultiRegion )
         }
         else if ( m_pScript->IsKeyHead( "ON", 2 ) )
         {
+            // Remember where the first section with this name starts, CScriptObj::OnTriggerFind stops at the first match too.
+            m_pScript->ParseKeyLate();
+            lpctstr ptcTrigName = m_pScript->GetArgRaw();
+            if (_vTriggerContexts.end() == std::find_if(_vTriggerContexts.begin(), _vTriggerContexts.end(),
+                [ptcTrigName](const TriggerContext& tc) { return !strcmpi(tc.sName.GetBuffer(), ptcTrigName); }))
+            {
+                _vTriggerContexts.push_back({CSString(ptcTrigName), m_pScript->GetContext()});
+            }
+
             int iTrigger;
             if ( iQty )
             {
-                m_pScript->ParseKeyLate();
                 iTrigger = FindTableSorted( m_pScript->GetArgRaw(), ppTable, iQty );
 
                 if ( iTrigger < 0 )	// unknown triggers ?
@@ -115,6 +125,7 @@ void CResourceLink::ScanSection( RES_TYPE restype, bool *pfMultiRegion )
             SetTrigger(iTrigger);
         }
     }
+    _fTriggerContextsValid = true;
 }
 
 void CResourceLink::DelRefInstance()
@@ -150,6 +161,8 @@ void CResourceLink::SetLink(CResourceScript *pScript)
     ADDTOCALLSTACK("CResourceLink::SetLink");
     m_pScript = pScript;
     m_Context = pScript->GetContext();
+    _vTriggerContexts.clear();
+    _fTriggerContextsValid = false;     // until ScanSection runs
 }
 
 void CResourceLink::CopyTransfer(CResourceLink *pLink)
@@ -160,6 +173,8 @@ void CResourceLink::CopyTransfer(CResourceLink *pLink)
     m_pScript = pLink->m_pScript;
     m_Context = pLink->m_Context;
     memcpy(m_dwOnTriggers, pLink->m_dwOnTriggers, sizeof(m_dwOnTriggers));
+    _vTriggerContexts = pLink->_vTriggerContexts;
+    _fTriggerContextsValid = pLink->_fTriggerContextsValid;
     _dwRefInstances = pLink->_dwRefInstances;
     pLink->_dwRefInstances = 0;	// instance has been transfered.
 }
@@ -230,4 +245,33 @@ bool CResourceLink::ResourceLock( CResourceLock &s )
     DEBUG_ERR(("ResourceLock '%s':%d id=%s FAILED\n", s.GetFilePath(), m_Context.m_iOffset, pszName));
 
     return false;
+}
+
+int CResourceLink::ResourceLockTrigger( CResourceLock &s, lpctstr ptcTrigName )
+{
+    ADDTOCALLSTACK_DEBUG("CResourceLink::ResourceLockTrigger");
+    if ( !_fTriggerContextsValid )
+    {
+        // Section not scanned: read it line by line, as before.
+        if ( !ResourceLock(s) )
+            return -1;
+        return OnTriggerFind(s, ptcTrigName) ? 1 : 0;
+    }
+
+    if ( !IsLinked() )
+        return -1;
+
+    const auto it = std::find_if(_vTriggerContexts.begin(), _vTriggerContexts.end(),
+        [ptcTrigName](const TriggerContext& tc) { return !strcmpi(tc.sName.GetBuffer(), ptcTrigName); });
+    if ( it == _vTriggerContexts.end() )
+        return 0;   // not in this section, no need to lock the script
+
+    ASSERT(m_pScript);
+    const int iRet = s.OpenLock( m_pScript, it->context );
+    if ( !iRet )
+        return 1;
+
+    s.AttachObj( this );
+    DEBUG_ERR(("ResourceLockTrigger '%s':%d id=%s trigger=%s FAILED\n", s.GetFilePath(), it->context.m_iOffset, GetResourceName(), ptcTrigName));
+    return -1;
 }

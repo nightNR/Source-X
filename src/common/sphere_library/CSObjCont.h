@@ -6,6 +6,7 @@
 #ifndef _INC_CSOBJCONT_H
 #define _INC_CSOBJCONT_H
 
+#include "../datatypes.h"
 #include "CSObjContRec.h"
 #include <cstddef>
 #include <vector>
@@ -48,6 +49,8 @@ class CSObjCont
 protected:
     BASECONT _Contents;
     bool _fClearingContainer;
+    bool _fTrackContentPos; // Call OnTrackedContentPosChanged when an element changes its x,y position.
+    uint _uiModCount;   // Changes every time the contents, or the position of one of them, change.
 
 public:
     friend class CSObjContRec;
@@ -97,7 +100,21 @@ public:
     inline size_t size() const noexcept                     { return _Contents.size();   }
     inline const CSObjContRec *const * data() const noexcept{ return _Contents.data();   }
 
-    inline BASECONT::iterator erase(BASECONT::iterator it)  { return _Contents.erase(it); }
+    inline BASECONT::iterator erase(BASECONT::iterator it)  { ++_uiModCount; return _Contents.erase(it); }
+
+    /**
+    * @brief Counter changing every time something is added or removed, or an element changes its x,y position.
+    *   Lets a derived class know if data computed from the contents is still valid.
+    */
+    inline uint GetModCount() const noexcept                { return _uiModCount; }
+    inline void OnContentPosChanged(const CSObjContRec* pRec, short iOldX, short iOldY, short iNewX, short iNewY) noexcept
+    {
+        ++_uiModCount;
+        if (_fTrackContentPos)
+        {
+            OnTrackedContentPosChanged(pRec, iOldX, iOldY, iNewX, iNewY);
+        }
+    }
 
     /**
     * @brief Returns a copy of the CSObjCont base container, which is safe to iterate on even if one of its elements is ::Delete'd.
@@ -196,6 +213,14 @@ protected:
     * @param pObjRec removed record.
     */
     virtual void OnRemoveObj( CSObjContRec* pObjRec );
+
+    /**
+    * @brief Called (only if _fTrackContentPos is set) when an element changes its x,y position, after the counter was changed.
+    */
+    virtual void OnTrackedContentPosChanged(const CSObjContRec* pRec, short iOldX, short iOldY, short iNewX, short iNewY) noexcept
+    {
+        (void)pRec; (void)iOldX; (void)iOldY; (void)iNewX; (void)iNewY;
+    }
     ///@}
 };
 

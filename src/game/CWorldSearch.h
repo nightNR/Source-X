@@ -3,6 +3,7 @@
 
 #include "../common/sphere_library/CSReferenceCount.h"
 #include "../common/CRect.h"
+#include <vector>
 
 /*
 #ifdef MSVC_COMPILER
@@ -20,6 +21,7 @@
 */
 
 class CSObjContRec;
+class CSObjCont;
 class CObjBase;
 class CSector;
 class CChar;
@@ -50,6 +52,13 @@ class CWorldSearch
     size_t _uiObjArrayCapacity;
     size_t _uiObjArraySize;
 
+    // Single tile char searches: the chars found in the tile index of the sector, the rest of _ppCurContObjs is skipped.
+    std::vector<CSObjContRec*> _vTileChars;
+    size_t _uiTileCharIndex;
+    const CSObjCont* _pTileCharsList;   // The list the chars were taken from...
+    uint _uiTileCharsModCount;          // ... and its modification counter at that time.
+    bool _fTileChars;                   // Using _vTileChars.
+
     int		 _iSectorCur;		// What is the current Sector index in m_rectSector
     CSector* _pSectorBase;		// Don't search the center sector 2 times.
     CSector* _pSector;			// current Sector
@@ -59,6 +68,7 @@ class CWorldSearch
     // Pointer to distance function:
     //  The ::* operator means "pointer to member of CPointMap".
     int (CPointMap::* _distanceFunction)(const CPointBase&) const noexcept;
+    bool _fMaxAxisDist;         // The distance function is max(dx, dy): check it inline, without calling _distanceFunction.
 
 public:
     static const char* m_sClassName;
@@ -81,9 +91,35 @@ public:
 private:
     void SetDistanceFunction();
 
+    inline bool IsInRange(const CPointMap& ptObj) const noexcept;
     bool GetNextSector();
     void LoadSectorObjs(CSObjCont const& pSectorObjList);
+    void ReserveObjArray(size_t uiCount);
+    void LoadSectorItems();
+    void LoadSectorChars();
 };
+
+// This is called for every object in the searched sectors, so keep it inline and cheap.
+bool CWorldSearch::IsInRange(const CPointMap& ptObj) const noexcept
+{
+    if (!_fMaxAxisDist)
+    {
+        return ((_pt.*_distanceFunction)(ptObj) <= _iDist);
+    }
+
+    const int dx = (_pt.m_x > ptObj.m_x) ? (_pt.m_x - ptObj.m_x) : (ptObj.m_x - _pt.m_x);
+    const int dy = (_pt.m_y > ptObj.m_y) ? (_pt.m_y - ptObj.m_y) : (ptObj.m_y - _pt.m_y);
+    if (((dx >= dy) ? dx : dy) > _iDist)
+    {
+        return false;
+    }
+    if (_fAllShow || (_iDist >= INT16_MAX))
+    {
+        return true;
+    }
+    // GetDist and GetDistSight return INT16_MAX for a point on another map or not valid: check it only for the objects in range.
+    return ((ptObj.m_map == _pt.m_map) && ptObj.IsValidPoint());
+}
 
 struct CWorldSearchHolder
 {

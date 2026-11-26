@@ -366,12 +366,54 @@ CServerStaticsBlock::CServerStaticsBlock()
 {
     m_iStatics = 0;
     m_pStatics = nullptr;
+    m_pwPointIndex = nullptr;
 }
 
 CServerStaticsBlock::~CServerStaticsBlock()
 {
     if ( m_pStatics != nullptr )
         delete[] m_pStatics;
+    if ( m_pwPointIndex != nullptr )
+        delete[] m_pwPointIndex;
+}
+
+void CServerStaticsBlock::BuildPointIndex()
+{
+    // Index the statics by their position (a stable counting sort), so the statics of a single tile can be found
+    //  without checking all the statics of the block.
+    if ( m_pwPointIndex != nullptr )
+    {
+        delete[] m_pwPointIndex;
+        m_pwPointIndex = nullptr;
+    }
+    if ( (m_iStatics == 0) || (m_iStatics > UINT16_MAX) )
+        return;
+
+    constexpr uint kuiTiles = UO_BLOCK_SIZE * UO_BLOCK_SIZE;
+    m_pwPointIndex = new word[kuiTiles + 1 + m_iStatics];
+    word * pwStart = m_pwPointIndex;
+    word * pwIndices = m_pwPointIndex + kuiTiles + 1;
+
+    // Count the statics of each tile (statics with an invalid offset are left out: they can't be at any tile).
+    memset(pwStart, 0, sizeof(word) * (kuiTiles + 1));
+    for ( uint i = 0; i < m_iStatics; ++i )
+    {
+        const CUOStaticItemRec & rec = m_pStatics[i];
+        if ( (rec.m_x < UO_BLOCK_SIZE) && (rec.m_y < UO_BLOCK_SIZE) )
+            ++pwStart[(rec.m_y * UO_BLOCK_SIZE) + rec.m_x + 1];
+    }
+    for ( uint t = 1; t <= kuiTiles; ++t )
+        pwStart[t] = (word)(pwStart[t] + pwStart[t - 1]);
+
+    // Fill the indices, keeping the original order of the statics of each tile.
+    word awNext[kuiTiles];
+    memcpy(awNext, pwStart, sizeof(awNext));
+    for ( uint i = 0; i < m_iStatics; ++i )
+    {
+        const CUOStaticItemRec & rec = m_pStatics[i];
+        if ( (rec.m_x < UO_BLOCK_SIZE) && (rec.m_y < UO_BLOCK_SIZE) )
+            pwIndices[awNext[(rec.m_y * UO_BLOCK_SIZE) + rec.m_x]++] = (word)i;
+    }
 }
 
 void CServerStaticsBlock::LoadStatics( dword ulBlockIndex, int map )
@@ -400,6 +442,7 @@ void CServerStaticsBlock::LoadStatics( dword ulBlockIndex, int map )
 			throw CSError(LOGL_CRIT, CSFile::GetLastError(), "CServerMapBlock: Read Statics");
 		}
 	}
+	BuildPointIndex();
 }
 
 void CServerStaticsBlock::LoadStatics( uint uiCount, CUOStaticItemRec * pStatics )
@@ -418,6 +461,7 @@ void CServerStaticsBlock::LoadStatics( uint uiCount, CUOStaticItemRec * pStatics
 			delete[] m_pStatics;
 		m_pStatics = nullptr;
 	}
+	BuildPointIndex();
 }
 
 const CUOStaticItemRec * CServerStaticsBlock::GetStatic( uint i ) const

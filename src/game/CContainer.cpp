@@ -55,6 +55,7 @@ void CContainer::ContentDelete(bool fForce)
     //	other objects are deleted and appended to this list, thus invalidating the iterators used by the for loop.
     const auto stateCopy = GetIterationSafeContReverse();
     _Contents.clear();
+    ++_uiModCount;
 
 
     for (CSObjContRec* pRec : stateCopy)	// iterate the list.
@@ -756,7 +757,7 @@ bool CContainer::r_WriteValContainer( lpctstr ptcKey, CSString &sVal, CTextConso
 		"RESTEST"
 	};
 
-	int i = FindTableHeadSorted(ptcKey, sm_szParams, ARRAY_COUNT(sm_szParams));
+	int i = FindTableHeadSortedCached(ptcKey, sm_szParams, ARRAY_COUNT(sm_szParams));
 	if ( i < 0 )
 		return false;
 

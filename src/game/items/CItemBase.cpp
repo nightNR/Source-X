@@ -21,6 +21,7 @@
 #include "../uo_files/CUOItemTypeRec.h"
 #include "../CServerConfig.h"
 #include "CItemBase.h"
+#include <vector>
 
 
 /////////////////////////////////////////////////////////////////
@@ -812,18 +813,41 @@ height_t CItemBase::GetItemHeight( ITEMID_TYPE id, uint64 *uiBlockFlags ) // sta
 	// Get just the height and the blocking flags for the item by id.
 	// used for walk block checking.
 
-	const CResourceID rid( RES_ITEMDEF, id );
-	size_t index = g_Cfg.m_ResHash.FindKey(rid);
-	if ( index != sl::scont_bad_index() ) // already loaded ?
+	// This is called for every static and item on a tile when checking where a char can stand, so cache the lookup
+	//  of the def in the resource hash (a binary search) for each art ID, valid until the resource hash changes.
+	//  The values are always read from the def.
+	struct CachedItemBase
 	{
-		CResourceDef * pBaseStub = g_Cfg.m_ResHash.GetBarePtrAt( rid, index );
-		ASSERT(pBaseStub);
-		CItemBase * pBase = dynamic_cast <CItemBase *>(pBaseStub);
-		if ( pBase )
+		CItemBase * pBase;	// nullptr = not loaded
+		uint uiModCount;	// 0 = not cached
+	};
+	static std::vector<CachedItemBase> s_vCache((size_t)ITEMID_MULTI, CachedItemBase{nullptr, 0});
+
+	CItemBase * pBase = nullptr;
+	const uint uiModCount = g_Cfg.m_ResHash.m_uiModCount;
+	CachedItemBase * pCached = ((id > ITEMID_NOTHING) && (id < ITEMID_MULTI)) ? &s_vCache[(size_t)id] : nullptr;
+	if ( pCached && (pCached->uiModCount == uiModCount) )
+	{
+		pBase = pCached->pBase;
+	}
+	else
+	{
+		const CResourceID rid( RES_ITEMDEF, id );
+		size_t index = g_Cfg.m_ResHash.FindKey(rid);
+		if ( index != sl::scont_bad_index() ) // already loaded ?
 		{
-			*uiBlockFlags = pBase->m_Can & CAN_I_MOVEMASK;
-			return pBase->GetHeight();
+			CResourceDef * pBaseStub = g_Cfg.m_ResHash.GetBarePtrAt( rid, index );
+			ASSERT(pBaseStub);
+			pBase = dynamic_cast <CItemBase *>(pBaseStub);
 		}
+		if ( pCached )
+			*pCached = CachedItemBase{pBase, uiModCount};
+	}
+
+	if ( pBase )
+	{
+		*uiBlockFlags = pBase->m_Can & CAN_I_MOVEMASK;
+		return pBase->GetHeight();
 	}
 
 	// Not already loaded.
@@ -1087,7 +1111,7 @@ bool CItemBase::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSrc
     }
 
     EXC_SET_BLOCK("Keyword");
-	switch ( FindTableHeadSorted( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 ))
+	switch ( FindTableHeadSortedCached( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 ))
 	{
 		//return as string or hex number or nullptr if not set
 		case IBC_ALTERITEM:
@@ -2252,7 +2276,40 @@ bool CItemBaseMulti::r_WriteVal(lpctstr ptcKey, CSString & sVal, CTextConsole * 
 
 CItemBase * CItemBase::FindItemBase( ITEMID_TYPE id ) // static
 {
-    ADDTOCALLSTACK_DEBUG("CItemBase::FindItemBase");
+    // This is called very often (e.g. for every static on a tile when checking where a char can stand), and the lookup
+    // in the resource hash is a binary search over a big array, so cache the result for each art ID.
+    // A cached result is valid until the resource hash changes. Results of the calls that change it themselves
+    // (first request of a def, which loads it) are not cached.
+    struct CachedItemBase
+    {
+        CItemBase * pBase;
+        uint uiModCount;    // 0 = not cached
+    };
+    static std::vector<CachedItemBase> s_vCache((size_t)ITEMID_MULTI, CachedItemBase{nullptr, 0});
+
+    if ( (id <= ITEMID_NOTHING) || (id >= ITEMID_MULTI) )
+    {
+        return FindItemBaseUncached( id );
+    }
+
+    const uint uiModCount = g_Cfg.m_ResHash.m_uiModCount;
+    const CachedItemBase& cached = s_vCache[(size_t)id];
+    if ( cached.uiModCount == uiModCount )
+    {
+        return cached.pBase;
+    }
+
+    CItemBase * pBase = FindItemBaseUncached( id );
+    if ( uiModCount == g_Cfg.m_ResHash.m_uiModCount )
+    {
+        s_vCache[(size_t)id] = CachedItemBase{pBase, uiModCount};
+    }
+    return pBase;
+}
+
+CItemBase * CItemBase::FindItemBaseUncached( ITEMID_TYPE id ) // static
+{
+    ADDTOCALLSTACK_DEBUG("CItemBase::FindItemBaseUncached");
 	// CItemBase is a like item already loaded.
 	if ( id <= ITEMID_NOTHING )
 		return nullptr;

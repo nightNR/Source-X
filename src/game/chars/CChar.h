@@ -379,6 +379,20 @@ public:		void  StatFlag_Mod(uint64 uiStatFlag, bool fMod) noexcept;
 	bool IsPriv( word flag ) const;
 	virtual PLEVEL_TYPE GetPrivLevel() const override;
 
+	// Same result as the dynamic_cast done by the CTextConsole and CScriptObj versions, but cheaper.
+	virtual CChar * GetChar() override
+	{
+		return this;
+	}
+	virtual const CChar * GetChar() const override
+	{
+		return this;
+	}
+	virtual CChar * GetThisChar() noexcept override
+	{
+		return this;
+	}
+
     [[nodiscard]] RETURNS_NOTNULL
         CCharBase * Char_GetDef() const;
 
@@ -617,12 +631,14 @@ public:
     * @return  true if the trigger is active, false if not.
     */
     bool IsTriggerActive(lpctstr trig) const;
+    bool IsTriggerActive(lpctstr trig, int iTrigId) const;     // iTrigId: index of trig in sm_szTrigName, or -1
 
     /**
     * @brief   Sets trigger active ( m_RunningTrigger ).
     * @param   trig    The trig.
     */
     void SetTriggerActive(lpctstr trig = nullptr);
+    void SetTriggerActive(lpctstr trig, int iTrigId);
 
     virtual TRIGRET_TYPE OnTrigger( lpctstr pTrigName, CScriptTriggerArgsPtr const& pScriptArgs, CTextConsole * pSrc ) override;
     TRIGRET_TYPE OnTrigger( CTRIG_TYPE trigger, CScriptTriggerArgsPtr const& pScriptArgs, CTextConsole * pSrc);

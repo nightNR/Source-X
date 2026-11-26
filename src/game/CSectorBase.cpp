@@ -27,9 +27,21 @@ void CCharsDisconnectList::AddCharDisconnected( CChar * pChar )
 ////////////////////////////////////////////////////////////////////////
 // -CCharsActiveList
 
-CCharsActiveList::CCharsActiveList() :
-     m_iClients(0), m_iTimeLastClient(0)
+static inline uint GetCharTileIndexKey(short x, short y) noexcept
 {
+    return ((uint)(ushort)x << 16) | (uint)(ushort)y;
+}
+
+static inline bool TileIndexEntryLess(const CCharsActiveList::TileIndexEntry& a, const CCharsActiveList::TileIndexEntry& b) noexcept
+{
+    return (a.uiKey < b.uiKey) || ((a.uiKey == b.uiKey) && (a.uiSeq < b.uiSeq));
+}
+
+CCharsActiveList::CCharsActiveList() :
+     m_iClients(0), m_iTimeLastClient(0),
+     _uiTileIndexModCount(0), _uiTileIndexNextSeq(0), _fTileIndexValid(false)
+{
+    _fTrackContentPos = true;   // Keep the tile index updated when a char moves.
 }
 
 CCharsActiveList::~CCharsActiveList() = default;
@@ -44,6 +56,21 @@ void CCharsActiveList::OnRemoveObj(CSObjContRec* pObjRec )
 	CSObjCont::OnRemoveObj(pObjRec);
 
 	CChar* pChar = static_cast<CChar*>(pObjRec);
+    if (_TileIndexCanUpdate())
+    {
+        const CPointMap& pt = pChar->GetTopPoint();
+        TileIndexEntry* pEntry = _TileIndexFind(pObjRec, pt.m_x, pt.m_y);
+        if (pEntry == nullptr)
+        {
+            _fTileIndexValid = false;
+        }
+        else
+        {
+            _vTileIndex.erase(_vTileIndex.begin() + (pEntry - _vTileIndex.data()));
+            _TileIndexUpdated();
+        }
+    }
+
 	if (pChar->IsClientType())
 	{
 		--m_iClients;
@@ -66,6 +93,25 @@ void CCharsActiveList::AddCharActive( CChar * pChar )
 		{
 			++m_iClients;
 		}
+
+        if (_TileIndexCanUpdate())
+        {
+            if (_uiTileIndexNextSeq == UINT32_MAX)
+            {
+                _fTileIndexValid = false;   // Build it again, numbering the chars from 0.
+            }
+            else
+            {
+                const CPointMap& pt = pChar->GetTopPoint();
+                const TileIndexEntry entry{ GetCharTileIndexKey(pt.m_x, pt.m_y), _uiTileIndexNextSeq++, pChar };
+                // Last of its tile, like it's the last of the list.
+                const auto itPos = std::upper_bound(_vTileIndex.begin(), _vTileIndex.end(), entry, TileIndexEntryLess);
+                _fTileIndexValid = false;   // In case the insertion throws.
+                _vTileIndex.insert(itPos, entry);
+                _fTileIndexValid = true;
+                _TileIndexUpdated();
+            }
+        }
 	}
 
     // UID_O_DISCONNECT is removed also by SetTopPoint. But the calls are in this order: SetTopPoint, then AddCharActive -> CSObjList::InsertContentHead(pChar) ->-> OnRemoveObj
@@ -73,8 +119,182 @@ void CCharsActiveList::AddCharActive( CChar * pChar )
     pChar->RemoveUIDFlags(UID_O_DISCONNECT);
 }
 
+bool CCharsActiveList::_TileIndexCanUpdate() noexcept
+{
+    // Can the index be updated for the change that just happened?
+    if (!_fTileIndexValid)
+    {
+        return false;
+    }
+    const uint uiModCount = GetModCount();
+    if (uiModCount == _uiTileIndexModCount + 1)
+    {
+        return true;    // Only this change since the index was last updated.
+    }
+    if (uiModCount != _uiTileIndexModCount)
+    {
+        _fTileIndexValid = false;   // Other changes we weren't told about: build it again on the next search.
+    }
+    return false;
+}
+
+void CCharsActiveList::_TileIndexUpdated() noexcept
+{
+    _uiTileIndexModCount = GetModCount();
+    if (_vTileIndex.size() != _Contents.size())
+    {
+        _fTileIndexValid = false;   // Shouldn't happen (e.g. the list was cleared): build it again.
+    }
+}
+
+CCharsActiveList::TileIndexEntry* CCharsActiveList::_TileIndexFind(const CSObjContRec* pChar, short x, short y) noexcept
+{
+    const TileIndexEntry key{ GetCharTileIndexKey(x, y), 0, nullptr };
+    auto range = std::equal_range(_vTileIndex.begin(), _vTileIndex.end(), key,
+        [](const TileIndexEntry& a, const TileIndexEntry& b) noexcept { return a.uiKey < b.uiKey; });
+    for (auto it = range.first; it != range.second; ++it)
+    {
+        if (it->pChar == pChar)
+        {
+            return &(*it);
+        }
+    }
+    return nullptr;
+}
+
+void CCharsActiveList::OnTrackedContentPosChanged(const CSObjContRec* pRec, short iOldX, short iOldY, short iNewX, short iNewY) noexcept
+{
+    // A char in this list is changing its x,y position: move its entry.
+    if (!_TileIndexCanUpdate())
+    {
+        return;
+    }
+    TileIndexEntry* pEntry = _TileIndexFind(pRec, iOldX, iOldY);
+    if (pEntry == nullptr)
+    {
+        _fTileIndexValid = false;
+        return;
+    }
+
+    TileIndexEntry entry = *pEntry;
+    entry.uiKey = GetCharTileIndexKey(iNewX, iNewY);
+    TileIndexEntry* const pBegin = _vTileIndex.data();
+    TileIndexEntry* const pDst = std::lower_bound(pBegin, pBegin + _vTileIndex.size(), entry, TileIndexEntryLess);
+    if (pDst > pEntry)
+    {
+        // Shift left the entries in between.
+        std::copy(pEntry + 1, pDst, pEntry);
+        *(pDst - 1) = entry;
+    }
+    else
+    {
+        // Shift them right.
+        std::copy_backward(pDst, pEntry, pEntry + 1);
+        *pDst = entry;
+    }
+    _TileIndexUpdated();
+}
+
+void CCharsActiveList::_BuildTileIndex()
+{
+    ADDTOCALLSTACK("CCharsActiveList::_BuildTileIndex");
+    const size_t uiCount = _Contents.size();
+    _vTileIndex.resize(uiCount);
+    for (size_t i = 0; i < uiCount; ++i)
+    {
+        CSObjContRec* pRec = _Contents[i];
+        const CPointMap& pt = static_cast<const CChar*>(pRec)->GetTopPoint();
+        _vTileIndex[i] = TileIndexEntry{ GetCharTileIndexKey(pt.m_x, pt.m_y), (uint)i, pRec };
+    }
+    std::sort(_vTileIndex.begin(), _vTileIndex.end(), TileIndexEntryLess);
+
+    _uiTileIndexNextSeq = (uint)uiCount;
+    _uiTileIndexModCount = GetModCount();
+    _fTileIndexValid = true;
+}
+
+bool CCharsActiveList::FindTileChars(short x, short y, const TileIndexEntry*& pFirst, const TileIndexEntry*& pLast)
+{
+    if (_Contents.size() < kuiTileIndexMinChars)
+    {
+        if (_vTileIndex.capacity() != 0)
+        {
+            // Free the memory, the list got small.
+            _fTileIndexValid = false;
+            std::vector<TileIndexEntry>().swap(_vTileIndex);
+        }
+        return false;
+    }
+
+    if (!_fTileIndexValid || (_uiTileIndexModCount != GetModCount()))
+    {
+        _BuildTileIndex();
+    }
+
+    const TileIndexEntry key{ GetCharTileIndexKey(x, y), 0, nullptr };
+    const auto range = std::equal_range(_vTileIndex.cbegin(), _vTileIndex.cend(), key,
+        [](const TileIndexEntry& a, const TileIndexEntry& b) noexcept { return a.uiKey < b.uiKey; });
+    pFirst = _vTileIndex.data() + (range.first - _vTileIndex.cbegin());
+    pLast = _vTileIndex.data() + (range.second - _vTileIndex.cbegin());
+    return true;
+}
+
 //////////////////////////////////////////////////////////////
 // -CItemList
+
+CItemsList::CItemsList() noexcept :
+    _uiTileIndexModCount(0), _fTileIndexValid(false)
+{
+}
+
+static inline uint GetTileIndexKey(short x, short y) noexcept
+{
+    return ((uint)(ushort)x << 16) | (uint)(ushort)y;
+}
+
+void CItemsList::_BuildTileIndex()
+{
+    ADDTOCALLSTACK("CItemsList::_BuildTileIndex");
+    const size_t uiCount = _Contents.size();
+    _vTileIndex.resize(uiCount);
+    for (size_t i = 0; i < uiCount; ++i)
+    {
+        const CPointMap& pt = static_cast<const CItem*>(_Contents[i])->GetTopPoint();
+        _vTileIndex[i] = TileIndexEntry{ GetTileIndexKey(pt.m_x, pt.m_y), (uint)i };
+    }
+    // Stable: items in the same tile keep the order they have in the list.
+    std::stable_sort(_vTileIndex.begin(), _vTileIndex.end(),
+        [](const TileIndexEntry& a, const TileIndexEntry& b) noexcept { return a.uiKey < b.uiKey; });
+
+    _uiTileIndexModCount = GetModCount();
+    _fTileIndexValid = true;
+}
+
+bool CItemsList::FindTileItems(short x, short y, const TileIndexEntry*& pFirst, const TileIndexEntry*& pLast)
+{
+    if (_Contents.size() < kuiTileIndexMinItems)
+    {
+        if (_fTileIndexValid)
+        {
+            // Free the memory, the list got small.
+            _fTileIndexValid = false;
+            std::vector<TileIndexEntry>().swap(_vTileIndex);
+        }
+        return false;
+    }
+
+    if (!_fTileIndexValid || (_uiTileIndexModCount != GetModCount()))
+    {
+        _BuildTileIndex();
+    }
+
+    const uint uiKey = GetTileIndexKey(x, y);
+    const auto range = std::equal_range(_vTileIndex.cbegin(), _vTileIndex.cend(), TileIndexEntry{ uiKey, 0 },
+        [](const TileIndexEntry& a, const TileIndexEntry& b) noexcept { return a.uiKey < b.uiKey; });
+    pFirst = _vTileIndex.data() + (range.first - _vTileIndex.cbegin());
+    pLast = _vTileIndex.data() + (range.second - _vTileIndex.cbegin());
+    return true;
+}
 
 void CItemsList::OnRemoveObj(CSObjContRec* pObjRec)
 {

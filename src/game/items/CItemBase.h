@@ -242,6 +242,7 @@ public:
 
 private:
 	static CItemBase * MakeDupeReplacement( CItemBase * pBase, ITEMID_TYPE iddupe );
+	static CItemBase * FindItemBaseUncached( ITEMID_TYPE id );
 	int CalculateMakeValue( int iSkillLevel ) const;
 
 protected:
