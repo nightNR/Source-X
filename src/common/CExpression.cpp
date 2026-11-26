@@ -1535,8 +1535,9 @@ CExpression::GetConditionalSubexpressions(
     // Start and end pointers are inclusive (pointed values are valid chars, the end pointer doesn't necessarily point to '\0').
 
     // Take a struct which holds a "block" (array) of 'sm_kuiMaxConditionalSubexprsPerExpr' amount of prebuilt CExpression::CScriptSubExprState.
+    // Every used subexpression slot is fully initialized below, so there's no need to clear the whole arena.
     auto pSubexprsArena = bufs_arena.acquireUnique();
-    memset(pSubexprsArena.get(), 0, sizeof(CSubExprStatesArena));
+    pSubexprsArena.get()->m_uiQty = 0;
 
     if (refStrExpr == nullptr)
     {
@@ -1550,13 +1551,85 @@ CExpression::GetConditionalSubexpressions(
 
     SubexprState_t* parsingSubexprsStates = pSubexprsArena.get()->m_subexprs;
     uint& uiSubexprQty = pSubexprsArena.get()->m_uiQty;	// number of subexpressions
-    DEBUG_ASSERT(uiSubexprQty == 0);
+
+    if (refStrExpr[0] == '\0')
+        return pSubexprsArena;
+
+    // Fast paths for the most common cases, giving the same result of the full parsing below.
+    {
+        lptstr ptcStart = refStrExpr;
+        GETNONWHITESPACE(ptcStart);
+        if (*ptcStart == '(')
+        {
+            // The whole expression is enclosed by a pair of brackets, eg. IF (<A> && (<B> == 1)), followed only by whitespace:
+            //  it's a single subexpression, nested if there are logical operators inside.
+            bool fLogical = false;
+            uint uiOpenedBrackets = 1;
+            lptstr ptcTest = ptcStart;
+            for (;;)
+            {
+                const tchar ch = *(++ptcTest);
+                if (ch == '(')
+                    ++uiOpenedBrackets;
+                else if (ch == ')')
+                {
+                    if (--uiOpenedBrackets == 0)
+                        break;
+                }
+                else if (ch == '\0')
+                    break;
+                else if (((ch == '|') || (ch == '&')) && (ptcTest[1] == ch))
+                    fLogical = true;
+            }
+            if (*ptcTest == ')')
+            {
+                lptstr ptcEnd = ptcTest + 1;
+                lptstr ptcTerminator = ptcEnd;
+                GETNONWHITESPACE(ptcTerminator);
+                if (*ptcTerminator == '\0')
+                {
+                    ushort uiType = (ushort)(SubexprType_t::None | SubexprType_t::TopParenthesizedExpr);
+                    if (fLogical)
+                        uiType |= SubexprType_t::MaybeNestedSubexpr;
+                    parsingSubexprsStates[0] = {ptcStart, ptcEnd, uiType, 0};
+                    uiSubexprQty = 1;
+                    refStrExpr = ptcTerminator;
+                    return pSubexprsArena;
+                }
+            }
+        }
+        else if (*ptcStart != '!')
+        {
+            // Without brackets, without logical operators && and || and without a leading negation,
+            //  the parsing below would end up with a single subexpression spanning the whole (trimmed) string.
+            bool fArithmetic = false;
+            lptstr ptcTest = ptcStart;
+            for (tchar ch = *ptcTest; ch != '\0'; ch = *(++ptcTest))
+            {
+                if ((ch == '(') || (((ch == '|') || (ch == '&')) && (ptcTest[1] == ch)))
+                    break;
+                if ((ch == '<') || (ch == '>'))
+                    fArithmetic = true;
+            }
+            if (*ptcTest == '\0')
+            {
+                lptstr ptcEnd = ptcTest;
+                Str_EatEndWhitespace(ptcStart, ptcEnd);
+                parsingSubexprsStates[0] = {ptcStart, ptcEnd, (fArithmetic ? SubexprType_t::BinaryNonLogical : SubexprType_t::None), 0};
+                uiSubexprQty = 1;
+                refStrExpr = ptcTest;
+                return pSubexprsArena;
+            }
+        }
+    }
 
     while (refStrExpr[0] != '\0')
 	{
         if (++uiSubexprQty >= s_kuiMaxSubexpressionsPerExpr)
 		{
             g_Log.EventWarn("Exceeded maximum allowed number of subexpressions (%u). Parsing halted.\n", s_kuiMaxSubexpressionsPerExpr);
+            // This slot wasn't initialized yet.
+            parsingSubexprsStates[uiSubexprQty - 1] = {nullptr, nullptr, SubexprType_t::Unknown, 0};
             return pSubexprsArena;
 		}
 
@@ -1596,15 +1669,15 @@ CExpression::GetConditionalSubexpressions(
 		}
 
         // Helper lambda functions for the next section.
-        auto findLastClosingBracket = [](lptstr pExpr_) -> lptstr
+        auto findLastClosingBracket = [](lptstr pExpr_, const size_t uiExprLength) -> lptstr
         {
             // Returns a pointer to the last closing bracket in the string.
             // If the last character in the string (ignoring comments) is not ')', it means that, if we find a closing bracket,
             //  it's past other characters, so there's other valid text after the ')'.
             // Eg: IF (1+2) > 10. The ')' is not at the end of the line, because there's the remaining part of the script.
+            // uiExprLength: the length of the string (we already know where it ends).
             ASSERT(*pExpr_ != '\0');
             lptstr pExprFinder;
-            const size_t uiExprLength = strlen(pExpr_);
             const lptstr pComment = Str_FindSubstring(pExpr_, "//", uiExprLength, 2);
             if (nullptr == pComment) {
                 pExprFinder = pExpr_ + uiExprLength - 1;
@@ -1672,12 +1745,13 @@ CExpression::GetConditionalSubexpressions(
                     sCurSubexpr.ptcEnd = refStrExpr;
                     if (ptcTopBracket && ptcLastClosingBracket)
                     {
-                        lptstr ptcLineLastClosingBracket = findLastClosingBracket(ptcCurSubexprStart);
-                        // ptcLastClosingBracket: the last closing bracket found while parsing the subexpression (might not be at the end of the line).
-                        // ptcExprLastclosingBracket: the last closing bracket ')', if any, of the string. The function used does NOT check if that's a valid closing bracket
-                        //  (eg. if in the string for every opening bracket there is a closing bracket).
                         if (uiSubexprQty == 1)
 						{
+                            // Here refStrExpr points to the string terminator.
+                            lptstr ptcLineLastClosingBracket = findLastClosingBracket(ptcCurSubexprStart, size_t(refStrExpr - ptcCurSubexprStart));
+                            // ptcLastClosingBracket: the last closing bracket found while parsing the subexpression (might not be at the end of the line).
+                            // ptcExprLastclosingBracket: the last closing bracket ')', if any, of the string. The function used does NOT check if that's a valid closing bracket
+                            //  (eg. if in the string for every opening bracket there is a closing bracket).
                             if (nullptr == ptcLineLastClosingBracket)
                             {
                                 // There are other valid characters after the closing curly bracket, so leave ptcEnd unchanged, to the end of the string.
