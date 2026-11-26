@@ -379,6 +379,20 @@ public:		void  StatFlag_Mod(uint64 uiStatFlag, bool fMod) noexcept;
 	bool IsPriv( word flag ) const;
 	virtual PLEVEL_TYPE GetPrivLevel() const override;
 
+	// Same result as the dynamic_cast done by the CTextConsole and CScriptObj versions, but cheaper.
+	virtual CChar * GetChar() override
+	{
+		return this;
+	}
+	virtual const CChar * GetChar() const override
+	{
+		return this;
+	}
+	virtual CChar * GetThisChar() noexcept override
+	{
+		return this;
+	}
+
     [[nodiscard]] RETURNS_NOTNULL
         CCharBase * Char_GetDef() const;
 

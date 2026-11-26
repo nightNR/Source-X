@@ -95,7 +95,7 @@ bool CScriptObj::r_GetRefFull(lpctstr& ptcKey, CScriptObj*& pRef)
 
 	// Special refs
 	CClient* pThisClient = nullptr;
-	if (CChar* pThisChar = dynamic_cast<CChar*>(this))
+	if (CChar* pThisChar = GetThisChar())
 	{
 		// r_GetRef is a virtual method, but if the Client is attached to a Char, its r_GetRef won't be called,
 		//	since CClient doesn't inherit from CChar and the pointer to the attached Client is stored in the Char's Class.

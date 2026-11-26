@@ -1184,7 +1184,7 @@ bool CObjBase::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, 
 			}
 		case OC_CTAGCOUNT:
 			{
-				CChar * pChar = dynamic_cast<CChar*>(this);
+				CChar * pChar = GetThisChar();
 				if ( !pChar )
 					sVal.FormatVal( 0 );
 				else
@@ -1442,7 +1442,7 @@ bool CObjBase::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, 
 			break;
 		case OC_ISPLAYER:
 			{
-				CChar * pChar = dynamic_cast<CChar*>(this);
+				CChar * pChar = GetThisChar();
 				if ( pChar )
 					sVal.FormatVal( (pChar->m_pPlayer == nullptr) ? 0 : 1 );
 				else
@@ -1459,7 +1459,7 @@ bool CObjBase::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, 
 				ptcKey += 12;
 				SKIP_SEPARATORS( ptcKey );
 				GETNONWHITESPACE( ptcKey );
-				CChar * pCharToCheck = dynamic_cast<CChar*>(this);
+				CChar * pCharToCheck = GetThisChar();
 				CClient * pClientToCheck = (pCharToCheck && pCharToCheck->IsClientActive()) ? (pCharToCheck->GetClientActive()) : nullptr;
 
 				if ( pClientToCheck )

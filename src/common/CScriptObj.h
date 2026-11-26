@@ -67,6 +67,12 @@ public:
 	static bool IsValidRef(const CScriptObj* pRef) noexcept;
 	static bool IsValidRef(const CUID& uidRef) noexcept;
 
+	// Same result as dynamic_cast<CChar*>(this), without the cost of the RTTI lookup (overridden only by CChar).
+	virtual CChar* GetThisChar() noexcept
+	{
+		return nullptr;
+	}
+
 private:
 	// Not virtual, it's meant to be used only by CScriptObj::r_WriteVal and CScriptObj::r_Verb and it takes care
 	//	of evaluating some special cases.
