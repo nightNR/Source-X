@@ -34,8 +34,11 @@ class CEntityProps
         bool fPropStr;
         COMPPROPS_TYPE iCCPType;
     };
+    struct CEPKey_t;    // The CComponentProps types having a given property key.
+    static const CEPKey_t* CEPFindKey(lpctstr ptcKey);
+
     bool CEPLoopLoad (CEPLoopRet_t* pRet, CScript& s, CObjBase* pLinkedObj, const RESDISPLAY_VERSION iLimitToExpansion);
-    bool CEPLoopWrite(CEPLoopRet_t* pRet, lpctstr ptcKey, CSString& sVal) const;
+    bool CEPLoopWrite(CEPLoopRet_t* pRet, const CEPKey_t& key, CSString& sVal) const;
 
 public:
     CEntityProps();

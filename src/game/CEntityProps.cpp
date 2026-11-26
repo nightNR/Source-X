@@ -1,6 +1,8 @@
 #include "../common/CLog.h"
 #include "chars/CChar.h"
 #include "CEntityProps.h"
+#include <algorithm>
+#include <vector>
 
 CEntityProps::CEntityProps()
 {
@@ -154,19 +156,117 @@ bool CEntityProps::r_LoadPropVal(CScript & s, CObjBase* pObjEntityProps, CBaseBa
 }
 
 
-bool CEntityProps::CEPLoopWrite(CEPLoopRet_t* pRet, lpctstr ptcKey, CSString& sVal) const
+struct CEntityProps::CEPKey_t
 {
-    for (const auto& pairElem : _lComponentProps)
+    lpctstr ptcKey;
+    uchar uiQty;                                                // How many CComponentProps types have this key.
+    COMPPROPS_TYPE piType[COMP_PROPS_QTY];                      // In COMPPROPS_TYPE order, like _lComponentProps.
+    CComponentProps::PropertyIndex_t piPropIndex[COMP_PROPS_QTY];
+};
+
+namespace
+{
+    // The property keys of every CComponentProps type, in COMPPROPS_TYPE order (the same tables of the CComponentProps classes).
+    #define ADDPROP(a,b,c) b,
+    lpctstr const sk_ptcKeysItemChar[] = {
+        #include "../tables/CCPropsItemChar_props.tbl"
+    };
+    lpctstr const sk_ptcKeysChar[] = {
+        #include "../tables/CCPropsChar_props.tbl"
+    };
+    lpctstr const sk_ptcKeysItem[] = {
+        #include "../tables/CCPropsItem_props.tbl"
+    };
+    lpctstr const sk_ptcKeysItemEquippable[] = {
+        #include "../tables/CCPropsItemEquippable_props.tbl"
+    };
+    lpctstr const sk_ptcKeysItemWeapon[] = {
+        #include "../tables/CCPropsItemWeapon_props.tbl"
+    };
+    lpctstr const sk_ptcKeysItemWeaponRanged[] = {
+        #include "../tables/CCPropsItemWeaponRanged_props.tbl"
+    };
+    #undef ADDPROP
+
+    struct CEPKeyTables_s
     {
-        if (CComponentProps* pComponent = pairElem.second.get())
+        lpctstr const *pptcTable;
+        int iCount;
+    };
+    const CEPKeyTables_s sk_KeyTables[] =
+    {
+        { sk_ptcKeysItemChar,           (int)ARRAY_COUNT(sk_ptcKeysItemChar) },             // COMP_PROPS_ITEMCHAR
+        { sk_ptcKeysChar,               (int)ARRAY_COUNT(sk_ptcKeysChar) },                 // COMP_PROPS_CHAR
+        { sk_ptcKeysItem,               (int)ARRAY_COUNT(sk_ptcKeysItem) },                 // COMP_PROPS_ITEM
+        { sk_ptcKeysItemEquippable,     (int)ARRAY_COUNT(sk_ptcKeysItemEquippable) },       // COMP_PROPS_ITEMEQUIPPABLE
+        { sk_ptcKeysItemWeapon,         (int)ARRAY_COUNT(sk_ptcKeysItemWeapon) },           // COMP_PROPS_ITEMWEAPON
+        { sk_ptcKeysItemWeaponRanged,   (int)ARRAY_COUNT(sk_ptcKeysItemWeaponRanged) }      // COMP_PROPS_ITEMWEAPONRANGED
+    };
+    static_assert(ARRAY_COUNT(sk_KeyTables) == COMP_PROPS_QTY, "A key table is missing for a CComponentProps type.");
+}
+
+const CEntityProps::CEPKey_t* CEntityProps::CEPFindKey(lpctstr ptcKey) // static
+{
+    // A single lookup tells if the key is a property of any CComponentProps type, and of which ones,
+    //  instead of a lookup in the key table of every CComponentProps of the object and of its base.
+    struct MergedKeys_s
+    {
+        std::vector<CEPKey_t> vKeys;
+        std::vector<lpctstr> vptcKeys;  // The keys of vKeys, sorted, for the lookup.
+    };
+    static const MergedKeys_s s_merged = []()
+    {
+        struct KeyRef_s
         {
-            const KeyTableDesc_s ktd = pComponent->GetPropertyKeysData();
-            pRet->iPropIndex = (COMPPROPS_TYPE)FindTableSortedCached(ptcKey, ktd.pptcTable, ktd.iTableSize - 1);
-            if (pRet->iPropIndex == (CComponentProps::PropertyIndex_t) - 1)
+            lpctstr ptcKey;
+            COMPPROPS_TYPE iType;
+            CComponentProps::PropertyIndex_t iPropIndex;
+        };
+        std::vector<KeyRef_s> vRefs;
+        for (int iType = 0; iType < COMP_PROPS_QTY; ++iType)
+        {
+            const CEPKeyTables_s& table = sk_KeyTables[iType];
+            for (int i = 0; i < table.iCount; ++i)
             {
-                // The key doesn't belong to this CComponentProps.
-                continue;
+                // Keep only the keys the binary search in the CComponentProps key table finds, so the result stays the same.
+                if (FindTableSorted(table.pptcTable[i], table.pptcTable, table.iCount) == i)
+                    vRefs.push_back({ table.pptcTable[i], (COMPPROPS_TYPE)iType, (CComponentProps::PropertyIndex_t)i });
             }
+        }
+        // Stable: the types of the same key stay in COMPPROPS_TYPE order.
+        std::stable_sort(vRefs.begin(), vRefs.end(),
+            [](const KeyRef_s& lhs, const KeyRef_s& rhs) { return strcmpi(lhs.ptcKey, rhs.ptcKey) < 0; });
+
+        MergedKeys_s merged;
+        for (const KeyRef_s& ref : vRefs)
+        {
+            if (merged.vKeys.empty() || (strcmpi(merged.vKeys.back().ptcKey, ref.ptcKey) != 0))
+                merged.vKeys.push_back({ ref.ptcKey, 0, {}, {} });
+            CEPKey_t& key = merged.vKeys.back();
+            ASSERT(key.uiQty < COMP_PROPS_QTY);
+            key.piType[key.uiQty] = ref.iType;
+            key.piPropIndex[key.uiQty] = ref.iPropIndex;
+            ++key.uiQty;
+        }
+        merged.vptcKeys.reserve(merged.vKeys.size());
+        for (const CEPKey_t& key : merged.vKeys)
+            merged.vptcKeys.push_back(key.ptcKey);
+        return merged;
+    }();
+
+    const int i = FindTableSortedCached(ptcKey, s_merged.vptcKeys.data(), (int)s_merged.vptcKeys.size());
+    return (i < 0) ? nullptr : &s_merged.vKeys[i];
+}
+
+bool CEntityProps::CEPLoopWrite(CEPLoopRet_t* pRet, const CEPKey_t& key, CSString& sVal) const
+{
+    // Same order as looping through _lComponentProps: the first subscribed CComponentProps having the key gets it.
+    for (uchar i = 0; i < key.uiQty; ++i)
+    {
+        if (const CComponentProps* pComponent = GetComponentProps(key.piType[i]))
+        {
+            pRet->iPropIndex = key.piPropIndex[i];
+            DEBUG_ASSERT(!strcmpi(pComponent->GetPropertyKeysData().pptcTable[pRet->iPropIndex], key.ptcKey));
             pRet->fPropStr = pComponent->IsPropertyStr(pRet->iPropIndex);
             if (pComponent->FindWritePropVal(sVal, pRet->iPropIndex, pRet->fPropStr))
             {
@@ -195,11 +295,16 @@ bool CEntityProps::r_WritePropVal(lpctstr ptcKey, CSString & sVal, const CObjBas
         if (pBaseEntityProps->_lComponentProps.empty())
             return false;
 
-        return pBaseEntityProps->CEPLoopWrite(&loopRet, ptcKey, sVal);  // pEntityProps is already a base cep
+        const CEPKey_t *pKey = CEPFindKey(ptcKey);
+        return pKey && pBaseEntityProps->CEPLoopWrite(&loopRet, *pKey, sVal);  // pEntityProps is already a base cep
     }
 
     ASSERT(pObjEntityProps);
-    if (!pObjEntityProps->_lComponentProps.empty() && pObjEntityProps->CEPLoopWrite(&loopRet, ptcKey, sVal)) // Check the object dynamic props first, then the base
+    const CEPKey_t *pKey = CEPFindKey(ptcKey);
+    if (!pKey)
+        return false;   // Not a property of any CComponentProps type.
+
+    if (!pObjEntityProps->_lComponentProps.empty() && pObjEntityProps->CEPLoopWrite(&loopRet, *pKey, sVal)) // Check the object dynamic props first, then the base
     {
         // A subscribed CComponentProps can store this prop...
         if (loopRet.iCCPType == COMP_PROPS_INVALID)
@@ -220,7 +325,7 @@ bool CEntityProps::r_WritePropVal(lpctstr ptcKey, CSString & sVal, const CObjBas
         }
     }
 
-    return (pBaseEntityProps && (pBaseEntityProps->_lComponentProps.empty() == false) && pBaseEntityProps->CEPLoopWrite(&loopRet, ptcKey, sVal));
+    return (pBaseEntityProps && (pBaseEntityProps->_lComponentProps.empty() == false) && pBaseEntityProps->CEPLoopWrite(&loopRet, *pKey, sVal));
 }
 
 void CEntityProps::AddPropsTooltipData(CObjBase* pObj)
